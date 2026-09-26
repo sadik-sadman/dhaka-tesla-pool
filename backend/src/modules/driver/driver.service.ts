@@ -1,6 +1,8 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, RideStatus } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { BadRequestError, ConflictError, NotFoundError } from "../../lib/errors";
+import { haversineKm } from "../../lib/geo";
+import { calculateFarePaisa } from "../rides/fare.service";
 import { SetDriverStatusInput } from "./driver.schema";
 
 const ACTIVE_POOL_STATUSES = ["MATCHED_ACCEPTED", "DRIVER_ARRIVED", "STARTED"] as const;
@@ -86,9 +88,16 @@ async function getOrCreateActivePool(vehicle: VehicleRow, rideRequest: RideReque
     if (existing.pickupZoneId !== rideRequest.pickupZoneId) {
       throw new ConflictError("This vehicle is already committed to a different pickup zone");
     }
-    const corridorMatch = existing.rideRequests.some(
-      (member) => member.destinationZone.corridor === rideRequest.destinationZone.corridor,
-    );
+    // An empty pool (every prior member cancelled, but the pool row itself
+    // lives on until it's completed/cancelled) has nothing to compare a
+    // destination corridor against -- treat it exactly like creating a
+    // fresh one, not as "incompatible with everything." Found by actually
+    // running the cancel-then-rejoin flow, not by inspection: an empty
+    // array's .some() is always false, which silently rejected every
+    // request into an emptied-out pool.
+    const corridorMatch =
+      existing.rideRequests.length === 0 ||
+      existing.rideRequests.some((member) => member.destinationZone.corridor === rideRequest.destinationZone.corridor);
     if (!corridorMatch) {
       throw new ConflictError("This request's destination isn't compatible with the vehicle's current pool");
     }
@@ -170,5 +179,125 @@ export async function acceptRideRequest(driverId: string, rideRequestId: string)
     });
 
     return updatedRequest;
+  });
+}
+
+async function getActivePoolForDriver(vehicleId: string) {
+  const pool = await prisma.pool.findFirst({
+    where: { vehicleId, status: { in: [...ACTIVE_POOL_STATUSES] } },
+    include: {
+      rideRequests: {
+        where: { status: { not: "CANCELLED" } },
+        include: { pickupZone: true, destinationZone: true },
+      },
+    },
+  });
+  if (!pool) {
+    throw new NotFoundError("No active trip for this vehicle");
+  }
+  return pool;
+}
+
+type ActivePool = Awaited<ReturnType<typeof getActivePoolForDriver>>;
+
+/** Cascades a pool-level transition to every active member's ride request,
+ * with one ride_status_history row per member -- the audit trail Section 2
+ * asks for ("hold onto enough history to explain exactly what happened"). */
+async function transitionPool(
+  pool: ActivePool,
+  toStatus: RideStatus,
+  changedBy: string,
+  poolExtra: Record<string, unknown>,
+) {
+  return prisma.$transaction(async (tx) => {
+    await tx.pool.update({ where: { id: pool.id }, data: { status: toStatus, ...poolExtra } });
+
+    const updated = [];
+    for (const member of pool.rideRequests) {
+      updated.push(await tx.rideRequest.update({ where: { id: member.id }, data: { status: toStatus } }));
+      await tx.rideStatusHistory.create({
+        data: { rideRequestId: member.id, fromStatus: pool.status, toStatus, changedBy },
+      });
+    }
+    return updated;
+  });
+}
+
+export async function markDriverArrived(driverId: string) {
+  const vehicle = await getVehicleForDriver(driverId);
+  const pool = await getActivePoolForDriver(vehicle.id);
+  if (pool.status !== "MATCHED_ACCEPTED") {
+    throw new ConflictError(`Cannot mark arrived from status ${pool.status}`);
+  }
+  return transitionPool(pool, "DRIVER_ARRIVED", driverId, { driverArrivedAt: new Date() });
+}
+
+export async function startTrip(driverId: string) {
+  const vehicle = await getVehicleForDriver(driverId);
+  const pool = await getActivePoolForDriver(vehicle.id);
+  if (pool.status !== "DRIVER_ARRIVED") {
+    throw new ConflictError(`Cannot start from status ${pool.status}`);
+  }
+  return transitionPool(pool, "STARTED", driverId, { startedAt: new Date() });
+}
+
+/**
+ * Completion is where fare gets finalized (Section 5): each active member's
+ * final_fare_paisa is calculated from *their own* pickup/destination, with
+ * the pool discount applied only if 2+ members are still active at this
+ * point (membership is frozen from STARTED onward -- cancellation is only
+ * legal before STARTED, see rides.service.ts#cancelRideRequest). CASH and
+ * TESLAPAY are both marked PAID immediately; TESLAPAY debits the wallet
+ * unconditionally, even into a negative balance -- a low-balance
+ * decline/retry flow is a documented out-of-scope simplification (Section
+ * 17), not an oversight.
+ */
+export async function completeTrip(driverId: string) {
+  const vehicle = await getVehicleForDriver(driverId);
+  const pool = await getActivePoolForDriver(vehicle.id);
+  if (pool.status !== "STARTED") {
+    throw new ConflictError(`Cannot complete from status ${pool.status}`);
+  }
+
+  const pooled = pool.rideRequests.length >= 2;
+
+  return prisma.$transaction(async (tx) => {
+    await tx.pool.update({ where: { id: pool.id }, data: { status: "COMPLETED", completedAt: new Date() } });
+
+    const updated = [];
+    for (const member of pool.rideRequests) {
+      const distanceKm = haversineKm(member.pickupZone, member.destinationZone);
+      const finalFarePaisa = calculateFarePaisa(distanceKm, pooled);
+
+      updated.push(
+        await tx.rideRequest.update({
+          where: { id: member.id },
+          data: { status: "COMPLETED", finalFarePaisa },
+        }),
+      );
+
+      await tx.rideStatusHistory.create({
+        data: { rideRequestId: member.id, fromStatus: "STARTED", toStatus: "COMPLETED", changedBy: driverId },
+      });
+
+      if (member.paymentMethod === "TESLAPAY") {
+        await tx.user.update({
+          where: { id: member.passengerId },
+          data: { walletBalancePaisa: { decrement: finalFarePaisa } },
+        });
+      }
+
+      await tx.payment.create({
+        data: {
+          rideRequestId: member.id,
+          amountPaisa: finalFarePaisa,
+          method: member.paymentMethod,
+          status: "PAID",
+          paidAt: new Date(),
+        },
+      });
+    }
+
+    return updated;
   });
 }
