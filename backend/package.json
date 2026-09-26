@@ -11,10 +11,11 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
-    "prisma:seed": "prisma db seed"
+    "prisma:seed": "prisma db seed",
+    "dev:db": "cross-env TS_NODE_PROJECT=tsconfig.scripts.json node --experimental-vm-modules -r ts-node/register scripts/dev-db.ts"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "cross-env TS_NODE_PROJECT=tsconfig.scripts.json ts-node prisma/seed.ts"
   },
   "keywords": [],
   "author": "",
@@ -40,6 +41,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.3",
     "@types/supertest": "^7.2.1",
+    "cross-env": "^10.1.0",
     "jest": "^30.5.2",
     "prisma": "^6.19.3",
     "supertest": "^7.3.0",
