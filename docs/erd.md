@@ -110,3 +110,4 @@ erDiagram
 - Index on `ride_requests(status, pickup_zone_id)` — the exact lookup the matching service runs on every new request
 - Index on `ride_requests(passenger_id)` and `pools(vehicle_id, status)` — history/dashboard queries
 - `CHECK` constraint `pools.occupied_seats >= 0` at the DB level as a last line of defense, in addition to the application-level atomic update that should always keep it within `[0, vehicle.capacity]`
+- Partial unique index `pools(vehicle_id) WHERE status IN ('MATCHED_ACCEPTED','DRIVER_ARRIVED','STARTED')` — guarantees a vehicle can never end up serving two non-terminal pools at once; see [decisions.md](decisions.md#concurrency)
