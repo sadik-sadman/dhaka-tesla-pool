@@ -1,0 +1,174 @@
+// Dhaka Tesla Pool -- data model.
+// See ../../docs/erd.md for the diagram and the reasoning behind every
+// field/constraint below; this file is the executable source of truth,
+// that doc is the human-readable explanation.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PASSENGER
+  DRIVER
+}
+
+enum VehicleStatus {
+  OFFLINE
+  ONLINE
+}
+
+// Shared by both `pools.status` and `ride_requests.status` (and used as the
+// from/to columns in ride_status_history) -- one lifecycle, one enum.
+// See docs/decisions.md#ride-lifecycle for why MATCHED and ACCEPTED are one
+// combined state rather than two.
+enum RideStatus {
+  REQUESTED
+  MATCHED_ACCEPTED
+  DRIVER_ARRIVED
+  STARTED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  TESLAPAY
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+}
+
+model User {
+  id                 String   @id @default(uuid()) @db.Uuid
+  name               String
+  email              String   @unique
+  passwordHash       String   @map("password_hash")
+  role               Role
+  walletBalancePaisa BigInt   @default(0) @map("wallet_balance_paisa")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  vehicle           Vehicle?
+  rideRequests      RideRequest[]
+  statusChangesMade RideStatusHistory[] @relation("ChangedBy")
+
+  @@map("users")
+}
+
+model Vehicle {
+  id             String        @id @default(uuid()) @db.Uuid
+  driverId       String        @unique @map("driver_id") @db.Uuid
+  name           String
+  capacity       Int
+  status         VehicleStatus @default(OFFLINE)
+  currentZoneId  String?       @map("current_zone_id") @db.Uuid
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  driver      User   @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  currentZone Zone?  @relation(fields: [currentZoneId], references: [id], onDelete: SetNull)
+  pools       Pool[]
+
+  @@index([status, currentZoneId])
+  @@map("vehicles")
+}
+
+model Zone {
+  id       String @id @default(uuid()) @db.Uuid
+  name     String @unique
+  corridor String
+  lat      Float
+  lng      Float
+
+  vehiclesCurrentlyHere    Vehicle[]
+  ridesPickingUpHere       RideRequest[] @relation("PickupZone")
+  ridesDroppingOffHere     RideRequest[] @relation("DestinationZone")
+  poolsPickingUpHere       Pool[]
+
+  @@map("zones")
+}
+
+model Pool {
+  id              String     @id @default(uuid()) @db.Uuid
+  vehicleId       String     @map("vehicle_id") @db.Uuid
+  pickupZoneId    String     @map("pickup_zone_id") @db.Uuid
+  status          RideStatus @default(MATCHED_ACCEPTED)
+  occupiedSeats   Int        @default(0) @map("occupied_seats")
+  driverArrivedAt DateTime?  @map("driver_arrived_at")
+  startedAt       DateTime?  @map("started_at")
+  completedAt     DateTime?  @map("completed_at")
+  createdAt       DateTime   @default(now()) @map("created_at")
+
+  vehicle      Vehicle       @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  pickupZone   Zone          @relation(fields: [pickupZoneId], references: [id], onDelete: Restrict)
+  rideRequests RideRequest[]
+
+  // A DB-level CHECK (occupied_seats >= 0) is added by hand in the initial
+  // migration SQL as a last line of defense -- see prisma/migrations -- since
+  // it depends on the installed Prisma version's support for @@check.
+  @@index([vehicleId, status])
+  @@map("pools")
+}
+
+model RideRequest {
+  id                  String     @id @default(uuid()) @db.Uuid
+  passengerId         String     @map("passenger_id") @db.Uuid
+  pickupZoneId        String     @map("pickup_zone_id") @db.Uuid
+  destinationZoneId   String     @map("destination_zone_id") @db.Uuid
+  seatsRequested      Int        @default(1) @map("seats_requested")
+  status              RideStatus @default(REQUESTED)
+  poolId              String?    @map("pool_id") @db.Uuid
+  paymentMethod       PaymentMethod @default(CASH) @map("payment_method")
+  estimatedFarePaisa  BigInt     @map("estimated_fare_paisa")
+  finalFarePaisa      BigInt?    @map("final_fare_paisa")
+  requestedAt         DateTime   @default(now()) @map("requested_at")
+  cancelledAt         DateTime?  @map("cancelled_at")
+  createdAt           DateTime   @default(now()) @map("created_at")
+  updatedAt           DateTime   @updatedAt @map("updated_at")
+
+  passenger       User                @relation(fields: [passengerId], references: [id], onDelete: Restrict)
+  pickupZone      Zone                @relation("PickupZone", fields: [pickupZoneId], references: [id], onDelete: Restrict)
+  destinationZone Zone                @relation("DestinationZone", fields: [destinationZoneId], references: [id], onDelete: Restrict)
+  pool            Pool?               @relation(fields: [poolId], references: [id], onDelete: SetNull)
+  statusHistory   RideStatusHistory[]
+  payment         Payment?
+
+  @@index([status, pickupZoneId])
+  @@index([passengerId])
+  @@map("ride_requests")
+}
+
+model RideStatusHistory {
+  id            String      @id @default(uuid()) @db.Uuid
+  rideRequestId String      @map("ride_request_id") @db.Uuid
+  fromStatus    RideStatus? @map("from_status")
+  toStatus      RideStatus  @map("to_status")
+  changedBy     String      @map("changed_by") @db.Uuid
+  changedAt     DateTime    @default(now()) @map("changed_at")
+
+  rideRequest RideRequest @relation(fields: [rideRequestId], references: [id], onDelete: Restrict)
+  changedByUser User      @relation("ChangedBy", fields: [changedBy], references: [id], onDelete: Restrict)
+
+  @@index([rideRequestId])
+  @@map("ride_status_history")
+}
+
+model Payment {
+  id            String        @id @default(uuid()) @db.Uuid
+  rideRequestId String        @unique @map("ride_request_id") @db.Uuid
+  amountPaisa   BigInt        @map("amount_paisa")
+  method        PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  paidAt        DateTime?     @map("paid_at")
+
+  rideRequest RideRequest @relation(fields: [rideRequestId], references: [id], onDelete: Restrict)
+
+  @@map("payments")
+}
