@@ -50,4 +50,32 @@ export interface RideRequest {
   finalFarePaisa: string | null;
   requestedAt: string;
   cancelledAt: string | null;
+  // Present on driver-facing responses (relevant requests, pool members);
+  // absent on a passenger's own /api/rides list, where it'd just be them.
+  passenger?: { id: string; name: string };
+}
+
+export type VehicleStatus = "OFFLINE" | "ONLINE";
+
+export interface Vehicle {
+  id: string;
+  driverId: string;
+  name: string;
+  capacity: number;
+  status: VehicleStatus;
+  currentZoneId: string | null;
+}
+
+export interface Pool {
+  id: string;
+  vehicleId: string;
+  pickupZoneId: string;
+  status: RideStatus;
+  occupiedSeats: number;
+  rideRequests: RideRequest[];
+}
+
+export interface DriverDashboardState {
+  vehicle: Vehicle;
+  pool: Pool | null;
 }
