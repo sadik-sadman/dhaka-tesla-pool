@@ -19,6 +19,8 @@ Applied to the seed cast: Nusrat (Banani → Mohakhali) and Rafiq (Banani → Gu
 
 This is a real, if simplified, proxy for "compatible routes" without touching a map API (Section 4). The obvious next step if this grew beyond MVP: replace the static corridor table with actual polyline/route overlap from a routing engine.
 
+**Edge case, found by testing the real flow rather than by inspection**: a pool whose only member(s) all cancelled is still an existing, non-terminal pool row — not deleted — with zero *active* members. Rule 3 above ("their destinations belong to the same corridor") has nothing to compare against in that state; naively checking "does any active member share a corridor" against an empty member list is vacuously `false`, which silently rejected every subsequent request as "incompatible" even though the pool was simply empty and should accept anything matching the pickup zone, same as a brand-new pool would. Fixed by treating zero active members as automatically compatible.
+
 ## Ride lifecycle
 
 Used exactly as suggested in Section 3, with `MATCHED` and `ACCEPTED` treated as one combined state rather than split into two:

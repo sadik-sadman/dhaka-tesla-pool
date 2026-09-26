@@ -336,19 +336,20 @@ describe("tesla-pooling (real Postgres-wire-protocol database)", () => {
     const pool = await prisma.pool.findUniqueOrThrow({ where: { id: accepted.body.poolId } });
     expect(pool.occupiedSeats).toBe(0);
 
-    // Cancel-after-STARTED should be rejected -- move the pool to STARTED
-    // directly (the arrived/started endpoints are a later chunk) and
-    // confirm a second request in the same pool can no longer be cancelled.
-    await prisma.pool.update({ where: { id: pool.id }, data: { status: "STARTED" } });
+    // Cancel-after-STARTED should be rejected -- accept a second request
+    // into the same (now-empty) pool and drive it to STARTED for real via
+    // the lifecycle endpoints, then confirm it can no longer be cancelled.
     const secondRequest = await request(app)
       .post("/api/rides")
       .set("Authorization", `Bearer ${nusrat.token}`)
       .send({ pickupZoneId: zones.banani.id, destinationZoneId: zones.mohakhali.id, seatsRequested: 1 })
       .expect(201);
-    await prisma.rideRequest.update({
-      where: { id: secondRequest.body.id },
-      data: { status: "STARTED", poolId: pool.id },
-    });
+    await request(app)
+      .post(`/api/driver/requests/${secondRequest.body.id}/accept`)
+      .set("Authorization", `Bearer ${jashim.token}`)
+      .expect(200);
+    await request(app).post("/api/driver/pool/arrived").set("Authorization", `Bearer ${jashim.token}`).expect(200);
+    await request(app).post("/api/driver/pool/start").set("Authorization", `Bearer ${jashim.token}`).expect(200);
 
     const cancelStarted = await request(app)
       .post(`/api/rides/${secondRequest.body.id}/cancel`)
