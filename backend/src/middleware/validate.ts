@@ -15,3 +15,16 @@ export function validateBody<T>(schema: ZodType<T>) {
     next();
   };
 }
+
+// Express types req.params values as `string | string[]` (an array only
+// applies to wildcard segments like `/*splat`, never a plain `:id`), so a
+// route handler can't pass req.params.id straight to a `string`-typed
+// service function without narrowing it somewhere -- here, once, instead of
+// in every handler that reads a path param.
+export function requireStringParam(req: Request, name: string): string {
+  const value = req.params[name];
+  if (typeof value !== "string") {
+    throw new BadRequestError(`Missing path parameter: ${name}`);
+  }
+  return value;
+}
