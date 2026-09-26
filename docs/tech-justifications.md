@@ -145,9 +145,24 @@ If you only remember one sentence from this file: **every row below has a real r
 
 ---
 
+## 9. Auth token storage (frontend) — localStorage, not an httpOnly cookie
+
+**Picked**: the JWT and public user object are kept in `localStorage` (`lib/auth-context.tsx`), attached as an `Authorization: Bearer` header on every API call.
+
+**Alternatives seriously considered**:
+- **httpOnly cookie** — the browser stores the token in a cookie JavaScript can't read; the backend sets it via `Set-Cookie` and reads it automatically on every request.
+
+**Why this fits here**: the frontend and backend are two separate deployables on two separate origins (see [architecture.md](architecture.md#environments)) — a cookie-based session means configuring `SameSite`/CORS credentials and (in production, cross-domain) either a shared parent domain or a proxy, none of which the app otherwise needs. `localStorage` + an explicit header works identically regardless of where each piece ends up deployed, with zero cookie/CORS-credentials configuration.
+
+**What would make me switch**: an httpOnly cookie is the meaningfully more secure choice the moment this handles real money or real personal data at real user scale — `localStorage` is readable by any JavaScript that runs on the page, so a successful XSS anywhere in the app (including a compromised third-party script) can steal the token outright, where a cookie at least keeps it out of reach of page-level JS. For a graded MVP demo with a simulated wallet and no real payment gateway, that risk is accepted; it wouldn't be for a real production ride-pooling app.
+
+**Trade-off accepted**: no CSRF protection is needed *because* of this choice (a cookie would need it), but the app is correspondingly more exposed to token theft via XSS than a cookie-based design would be.
+
+---
+
 ## Not yet decided (will be added here when built)
 
-- Frontend styling approach (Tailwind vs. CSS Modules vs. a component library) — pending the `feature/frontend-*` chunks.
-- Frontend data-fetching pattern (plain `fetch` + React Context vs. a library like TanStack Query) — same.
+- Frontend styling approach beyond plain Tailwind utility classes (a component library, if the UI grows enough to want one) — pending the passenger/driver dashboard chunks.
+- Frontend data-fetching pattern for the dashboards specifically (plain `fetch` + polling vs. a library like TanStack Query) — same.
 
 *This file is kept in sync with what's actually implemented — every time a new non-trivial technical decision gets made in this build, it gets its own entry here alongside the code, not bolted on at the end.*
