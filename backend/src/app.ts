@@ -1,6 +1,8 @@
 import express, { Application, NextFunction, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
+import { HttpError } from "./lib/errors";
+import { authRouter } from "./modules/auth/auth.routes";
 
 export function createApp(): Application {
   const app = express();
@@ -13,19 +15,26 @@ export function createApp(): Application {
     res.status(200).json({ status: "ok" });
   });
 
-  // Domain routes (auth, vehicles, rides, driver) are mounted here as they
-  // land -- see feature/passenger-auth, feature/tesla-pooling, etc.
+  app.use("/api/auth", authRouter);
+
+  // Further domain routes (vehicles, rides, driver) are mounted here as they
+  // land -- see feature/tesla-pooling, feature/driver-flow, etc.
 
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: "Not found" });
   });
 
   // Centralized error handler -- keeps error shaping out of every route.
+  // A thrown HttpError (see src/lib/errors.ts) carries its own status code;
+  // anything else is an unexpected bug, logged and reported as a 500.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (err instanceof HttpError) {
+      res.status(err.status).json({ error: err.message });
+      return;
+    }
     console.error(err);
-    const message = err instanceof Error ? err.message : "Internal server error";
-    res.status(500).json({ error: message });
+    res.status(500).json({ error: "Internal server error" });
   });
 
   return app;
