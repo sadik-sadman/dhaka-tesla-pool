@@ -25,3 +25,29 @@ export interface Zone {
   lat: number;
   lng: number;
 }
+
+export type RideStatus =
+  | "REQUESTED"
+  | "MATCHED_ACCEPTED"
+  | "DRIVER_ARRIVED"
+  | "STARTED"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export type PaymentMethod = "CASH" | "TESLAPAY";
+
+export interface RideRequest {
+  id: string;
+  pickupZoneId: string;
+  destinationZoneId: string;
+  pickupZone: Zone;
+  destinationZone: Zone;
+  seatsRequested: number;
+  status: RideStatus;
+  poolId: string | null;
+  paymentMethod: PaymentMethod;
+  estimatedFarePaisa: string;
+  finalFarePaisa: string | null;
+  requestedAt: string;
+  cancelledAt: string | null;
+}

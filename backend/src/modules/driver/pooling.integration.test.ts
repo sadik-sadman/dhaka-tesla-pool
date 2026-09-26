@@ -328,10 +328,16 @@ describe("tesla-pooling (real Postgres-wire-protocol database)", () => {
       .set("Authorization", `Bearer ${jashim.token}`)
       .expect(200);
 
-    await request(app)
+    const cancelled = await request(app)
       .post(`/api/rides/${nusratRequest.body.id}/cancel`)
       .set("Authorization", `Bearer ${nusrat.token}`)
       .expect(200);
+    // Same response shape as create/list -- a real bug (caught by actually
+    // using the frontend, not by this suite) let this drift: the cancel
+    // endpoint was returning a bare ride request with no pickupZone/
+    // destinationZone, which crashed the UI trying to render them.
+    expect(cancelled.body.pickupZone.name).toBe("Banani");
+    expect(cancelled.body.destinationZone.name).toBe("Mohakhali");
 
     const pool = await prisma.pool.findUniqueOrThrow({ where: { id: accepted.body.poolId } });
     expect(pool.occupiedSeats).toBe(0);

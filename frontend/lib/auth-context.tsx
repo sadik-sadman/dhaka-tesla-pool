@@ -64,12 +64,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const stored = readStoredAuth();
-    if (stored) {
-      setUser(stored.user);
-      setToken(stored.token);
-    }
-    setLoading(false);
+    queueMicrotask(() => {
+      const stored = readStoredAuth();
+      if (stored) {
+        setUser(stored.user);
+        setToken(stored.token);
+      }
+      setLoading(false);
+    });
   }, []);
 
   async function login(email: string, password: string) {
