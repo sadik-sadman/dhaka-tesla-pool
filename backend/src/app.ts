@@ -3,6 +3,9 @@ import cors from "cors";
 import helmet from "helmet";
 import { HttpError } from "./lib/errors";
 import { authRouter } from "./modules/auth/auth.routes";
+import { zonesRouter } from "./modules/zones/zones.routes";
+import { ridesRouter } from "./modules/rides/rides.routes";
+import { driverRouter } from "./modules/driver/driver.routes";
 
 export function createApp(): Application {
   const app = express();
@@ -16,9 +19,9 @@ export function createApp(): Application {
   });
 
   app.use("/api/auth", authRouter);
-
-  // Further domain routes (vehicles, rides, driver) are mounted here as they
-  // land -- see feature/tesla-pooling, feature/driver-flow, etc.
+  app.use("/api/zones", zonesRouter);
+  app.use("/api/rides", ridesRouter);
+  app.use("/api/driver", driverRouter);
 
   app.use((_req: Request, res: Response) => {
     res.status(404).json({ error: "Not found" });
