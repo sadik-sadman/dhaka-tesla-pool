@@ -5,6 +5,13 @@ FROM base AS deps
 COPY package*.json ./
 RUN npm ci
 
+# Separate prod-only install: the runtime image ships from here, not from
+# `deps`, so devDependencies (jest, ts-node, the PGlite test-database engine,
+# etc.) never end up in what actually gets deployed.
+FROM base AS prod-deps
+COPY package*.json ./
+RUN npm ci --omit=dev
+
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -13,7 +20,7 @@ RUN npm run build
 
 FROM base AS runtime
 ENV NODE_ENV=production
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY prisma ./prisma
