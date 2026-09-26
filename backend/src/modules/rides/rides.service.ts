@@ -67,6 +67,11 @@ export async function cancelRideRequest(passengerId: string, rideRequestId: stri
     const updated = await tx.rideRequest.update({
       where: { id: rideRequestId },
       data: { status: "CANCELLED", cancelledAt: new Date() },
+      // Same include as create/list -- found by the frontend actually
+      // crashing on a cancelled ride's now-missing pickupZone/
+      // destinationZone, since this response shape had silently drifted
+      // from the other two endpoints.
+      include: { pickupZone: true, destinationZone: true },
     });
 
     if (wasMatched) {
