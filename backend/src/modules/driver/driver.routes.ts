@@ -14,6 +14,11 @@ driverRouter.patch("/status", validateBody(setDriverStatusSchema), async (req, r
   res.status(200).json(vehicle);
 });
 
+driverRouter.get("/dashboard", async (req, res) => {
+  const state = await driverService.getMyDashboardState(req.user!.sub);
+  res.status(200).json(serializeBigInt(state));
+});
+
 driverRouter.get("/requests", async (req, res) => {
   const requests = await driverService.listRelevantRequests(req.user!.sub);
   res.status(200).json(serializeBigInt(requests));

@@ -182,20 +182,38 @@ export async function acceptRideRequest(driverId: string, rideRequestId: string)
   });
 }
 
-async function getActivePoolForDriver(vehicleId: string) {
-  const pool = await prisma.pool.findFirst({
+function findActivePool(vehicleId: string) {
+  return prisma.pool.findFirst({
     where: { vehicleId, status: { in: [...ACTIVE_POOL_STATUSES] } },
     include: {
       rideRequests: {
         where: { status: { not: "CANCELLED" } },
-        include: { pickupZone: true, destinationZone: true },
+        include: {
+          pickupZone: true,
+          destinationZone: true,
+          passenger: { select: { id: true, name: true } },
+        },
       },
     },
   });
+}
+
+async function getActivePoolForDriver(vehicleId: string) {
+  const pool = await findActivePool(vehicleId);
   if (!pool) {
     throw new NotFoundError("No active trip for this vehicle");
   }
   return pool;
+}
+
+/** Single call for the dashboard's poll: vehicle state plus the active pool
+ * (or null -- an idle driver with no active pool is the normal, common
+ * case, not an error), so the frontend doesn't need two separate requests
+ * on every tick. */
+export async function getMyDashboardState(driverId: string) {
+  const vehicle = await getVehicleForDriver(driverId);
+  const pool = await findActivePool(vehicle.id);
+  return { vehicle, pool };
 }
 
 type ActivePool = Awaited<ReturnType<typeof getActivePoolForDriver>>;

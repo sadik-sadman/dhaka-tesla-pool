@@ -363,4 +363,60 @@ describe("tesla-pooling (real Postgres-wire-protocol database)", () => {
       .send();
     expect(cancelStarted.status).toBe(403);
   });
+
+  it("GET /api/driver/dashboard reflects idle vs. active-pool state", async () => {
+    const jashim = await signup(app, {
+      role: "DRIVER",
+      name: "Jashim",
+      email: "jashim.dashboard@test.local",
+      password: "supersecret",
+      vehicleName: "Bullet",
+      vehicleCapacity: 3,
+    });
+    const nusrat = await signup(app, {
+      role: "PASSENGER",
+      name: "Nusrat",
+      email: "nusrat.dashboard@test.local",
+      password: "supersecret",
+    });
+
+    const beforeOnline = await request(app)
+      .get("/api/driver/dashboard")
+      .set("Authorization", `Bearer ${jashim.token}`)
+      .expect(200);
+    expect(beforeOnline.body.vehicle.status).toBe("OFFLINE");
+    expect(beforeOnline.body.pool).toBeNull();
+
+    await request(app)
+      .patch("/api/driver/status")
+      .set("Authorization", `Bearer ${jashim.token}`)
+      .send({ status: "ONLINE", currentZoneId: zones.banani.id })
+      .expect(200);
+
+    const idleOnline = await request(app)
+      .get("/api/driver/dashboard")
+      .set("Authorization", `Bearer ${jashim.token}`)
+      .expect(200);
+    expect(idleOnline.body.vehicle.status).toBe("ONLINE");
+    expect(idleOnline.body.pool).toBeNull();
+
+    const nusratRequest = await request(app)
+      .post("/api/rides")
+      .set("Authorization", `Bearer ${nusrat.token}`)
+      .send({ pickupZoneId: zones.banani.id, destinationZoneId: zones.mohakhali.id })
+      .expect(201);
+    await request(app)
+      .post(`/api/driver/requests/${nusratRequest.body.id}/accept`)
+      .set("Authorization", `Bearer ${jashim.token}`)
+      .expect(200);
+
+    const withPool = await request(app)
+      .get("/api/driver/dashboard")
+      .set("Authorization", `Bearer ${jashim.token}`)
+      .expect(200);
+    expect(withPool.body.pool.status).toBe("MATCHED_ACCEPTED");
+    expect(withPool.body.pool.occupiedSeats).toBe(1);
+    expect(withPool.body.pool.rideRequests).toHaveLength(1);
+    expect(withPool.body.pool.rideRequests[0].passenger.name).toBe("Nusrat");
+  });
 });
