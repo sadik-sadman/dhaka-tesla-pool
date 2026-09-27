@@ -32,7 +32,21 @@ services:
     ports:
       - "4000:4000"
 
-  # `frontend` service is added in a later commit once the Next.js app exists.
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the client bundle at build time (see
+        # frontend/Dockerfile) -- this is read by the user's BROWSER, not by
+        # other containers, so it must be the backend's host-published port
+        # (localhost:4000), never a Docker-internal service name like
+        # http://backend:4000, which a browser can't resolve.
+        NEXT_PUBLIC_API_URL: http://localhost:4000
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
 
 volumes:
   tesla_pool_db_data:
