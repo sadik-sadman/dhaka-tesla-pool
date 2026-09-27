@@ -7,7 +7,9 @@ RUN npm ci
 
 # Separate prod-only install: the runtime image ships from here, not from
 # `deps`, so devDependencies (jest, ts-node, the PGlite test-database engine,
-# etc.) never end up in what actually gets deployed.
+# etc.) never end up in what actually gets deployed. `prisma` (the CLI, for
+# `migrate deploy` below) is a real dependency, not a devDependency, for
+# exactly this reason -- it has to be present here.
 FROM base AS prod-deps
 COPY package*.json ./
 RUN npm ci --omit=dev
@@ -30,4 +32,4 @@ EXPOSE 4000
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=5 \
   CMD node -e "require('http').get('http://localhost:4000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/seed.js && node dist/index.js"]
