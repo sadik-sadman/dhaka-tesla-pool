@@ -5,17 +5,18 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc",
+    "build": "tsc && tsc -p tsconfig.seed.json",
     "start": "node dist/index.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:seed": "prisma db seed",
+    "prisma:seed:dev": "cross-env TS_NODE_PROJECT=tsconfig.scripts.json ts-node prisma/seed.ts",
     "dev:db": "cross-env TS_NODE_PROJECT=tsconfig.scripts.json node --experimental-vm-modules -r ts-node/register scripts/dev-db.ts"
   },
   "prisma": {
-    "seed": "cross-env TS_NODE_PROJECT=tsconfig.scripts.json ts-node prisma/seed.ts"
+    "seed": "node dist/seed.js"
   },
   "keywords": [],
   "author": "",
@@ -29,6 +30,7 @@
     "express": "^5.2.1",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
+    "prisma": "^6.19.3",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -43,7 +45,6 @@
     "@types/supertest": "^7.2.1",
     "cross-env": "^10.1.0",
     "jest": "^30.5.2",
-    "prisma": "^6.19.3",
     "supertest": "^7.3.0",
     "ts-jest": "^29.4.14",
     "ts-node": "^10.9.2",
