@@ -72,3 +72,5 @@ This keeps "where does the business logic live" (an explicit grading point in Se
 | Tests (`npm test` in `backend/`) | — | same Express app, imported directly (supertest) | ephemeral in-process Postgres-compatible engine ([PGlite](https://pglite.dev)), migrated fresh per test run — see [README testing section](../README.md#testing) for why |
 
 The same Prisma schema and migrations run unmodified against all three; only `DATABASE_URL` changes.
+
+**One frontend-specific gotcha worth calling out**: `NEXT_PUBLIC_API_URL` is read by the *browser*, not by the frontend container, so it gets inlined into the client JavaScript bundle at `next build` time (Next.js's own docs call this out explicitly) — a `docker-compose environment:` entry would have zero effect on it, since by then the image is already built. `frontend/Dockerfile` takes it as a build `ARG` instead, and `docker-compose.yml` sets that arg to `http://localhost:4000` — the backend's *host-published* port, not a Docker-internal service name like `http://backend:4000`, which the user's browser has no way to resolve.
