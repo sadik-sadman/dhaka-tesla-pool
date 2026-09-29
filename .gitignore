@@ -41,3 +41,7 @@ docker-compose.override.yml
 
 # Local convenience scripts (personal, machine-specific -- not for the submission)
 run-dev.bat
+
+# Claude Code local tooling config (dev-server preview launch config,
+# session lock files) -- not part of the submission
+.claude/
