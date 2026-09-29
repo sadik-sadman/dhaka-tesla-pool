@@ -97,6 +97,15 @@ Display formatting (`paisa / 100` → `"৳X.XX"`) happens only at the presentat
 
 `vehicles.driver_id` is `UNIQUE`. A real fleet operator might let one driver borrow different vehicles per shift, or one owner run several vehicles with hired drivers — neither is needed to demonstrate pooling/capacity logic, and modeling it "properly" (a `driver_vehicle_assignments` table with an active-shift concept) would be exactly the kind of complexity Section 9 says to avoid without a reason. Noted here as a documented next step, not implemented.
 
+## Driver location
+
+`vehicles.current_zone_id` is set explicitly when a driver goes `ONLINE` (Section 3: "own a Tesla ... see relevant requests"), but the question of what happens to it once a trip actually happens was originally left unhandled — a driver who drove from Banani to Mohakhali would still show as "at Banani" afterward, silently wrong for the next round of matching. Fixed with one rule, applied consistently:
+
+- **On `completeTrip`**, `current_zone_id` is set automatically to the *farthest* active member's destination zone (by the same haversine distance used for fare calculation). No real routing is modeled (Section 3), so there's no actual drop-off order to follow; a real driver dropping off a pooled group along one shared corridor ends the trip at the far end of it, not back at the first stop, so that's the zone treated as "where the vehicle now is."
+- **Manual override, any time** — `PATCH /api/driver/status` with `{status: "ONLINE", currentZoneId}` always accepts a new zone regardless of the vehicle's current one, so a driver whose actual location doesn't match the auto-derived guess (or who just repositioned without a trip) can correct it directly from the dashboard, without needing to go offline and back online first.
+
+Alternatives considered: the *first* member's destination (arbitrary — a pool's members aren't ordered by anything meaningful); the pickup zone unchanged (wrong on its face — the vehicle demonstrably isn't there anymore once a trip completes). Farthest-destination was the only option that's both deterministic and has an actual real-world justification behind it.
+
 ## Viral-scale bonus
 
 See [docs/scaling.md](scaling.md) for the "if Oi Tesla goes viral" reasoning (Section 12 bonus) — kept separate from this file since it's optional and speculative rather than a decision this MVP actually implements.

@@ -173,6 +173,13 @@ describe("driver lifecycle: arrived -> started -> completed (real Postgres-wire-
       "STARTED",
       "COMPLETED",
     ]);
+
+    // No real routing/drop-off order is modeled (docs/decisions.md#driver-location)
+    // -- Rafiq's destination (Gulshan 1, 1.630km) is farther from Banani than
+    // Nusrat's (Mohakhali, 1.521km), so the vehicle's current zone should now
+    // be Gulshan 1, not left stale at the pickup zone.
+    const jashimVehicle = await prisma.vehicle.findUniqueOrThrow({ where: { driverId: jashim.user.id } });
+    expect(jashimVehicle.currentZoneId).toBe(zones.gulshan1.id);
   });
 
   it("a solo (unpooled) trip is charged the full fare, no discount", async () => {
