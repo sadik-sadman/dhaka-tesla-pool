@@ -273,4 +273,66 @@ describe("driver lifecycle: arrived -> started -> completed (real Postgres-wire-
       .expect(200);
     expect(otherDriverHistory.body).toHaveLength(0);
   });
+
+  it("a driver cannot arrive, start, or complete another driver's active pool", async () => {
+    const jashim = await signup(app, {
+      role: "DRIVER",
+      name: "Jashim",
+      email: "jashim.isolation@test.local",
+      password: "supersecret",
+      vehicleName: "Bullet",
+      vehicleCapacity: 3,
+    });
+    const otherDriver = await signup(app, {
+      role: "DRIVER",
+      name: "OtherDriver",
+      email: "other.isolation@test.local",
+      password: "supersecret",
+      vehicleName: "OtherCar",
+      vehicleCapacity: 2,
+    });
+    const nusrat = await signup(app, {
+      role: "PASSENGER",
+      name: "Nusrat",
+      email: "nusrat.isolation@test.local",
+      password: "supersecret",
+    });
+
+    await request(app)
+      .patch("/api/driver/status")
+      .set("Authorization", `Bearer ${jashim.token}`)
+      .send({ status: "ONLINE", currentZoneId: zones.banani.id })
+      .expect(200);
+    const nusratReq = await request(app)
+      .post("/api/rides")
+      .set("Authorization", `Bearer ${nusrat.token}`)
+      .send({ pickupZoneId: zones.banani.id, destinationZoneId: zones.mohakhali.id })
+      .expect(201);
+    await request(app)
+      .post(`/api/driver/requests/${nusratReq.body.id}/accept`)
+      .set("Authorization", `Bearer ${jashim.token}`)
+      .expect(200);
+
+    // OtherDriver has no active pool at all -- these must 404, not reach
+    // into Jashim's pool.
+    await request(app)
+      .post("/api/driver/pool/arrived")
+      .set("Authorization", `Bearer ${otherDriver.token}`)
+      .expect(404);
+    await request(app)
+      .post("/api/driver/pool/start")
+      .set("Authorization", `Bearer ${otherDriver.token}`)
+      .expect(404);
+    await request(app)
+      .post("/api/driver/pool/complete")
+      .set("Authorization", `Bearer ${otherDriver.token}`)
+      .expect(404);
+
+    // Jashim's pool is untouched -- still exactly where he left it.
+    const jashimState = await request(app)
+      .get("/api/driver/dashboard")
+      .set("Authorization", `Bearer ${jashim.token}`)
+      .expect(200);
+    expect(jashimState.body.pool.status).toBe("MATCHED_ACCEPTED");
+  });
 });
