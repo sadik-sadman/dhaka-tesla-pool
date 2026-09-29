@@ -1,8 +1,48 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { PaymentMethod, RideRequest, Zone } from "@/lib/types";
+
+// Not-yet-submitted input is real work a passenger can lose to an accidental
+// refresh or an errant back-button -- sessionStorage (not localStorage,
+// since a draft shouldn't outlive the tab the way the auth token does)
+// keeps it across a reload without needing a backend round-trip for
+// something that isn't a ride yet.
+const DRAFT_KEY = "dhaka-tesla-pool.request-ride-draft";
+
+interface Draft {
+  pickupZoneId: string;
+  destinationZoneId: string;
+  seatsRequested: string;
+  paymentMethod: PaymentMethod;
+}
+
+function readDraft(): Partial<Draft> {
+  try {
+    const raw = sessionStorage.getItem(DRAFT_KEY);
+    return raw ? (JSON.parse(raw) as Draft) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDraft(draft: Draft) {
+  try {
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    // Private browsing / blocked storage -- the draft just won't survive a
+    // reload, same degraded-not-broken fallback as the auth token.
+  }
+}
+
+function clearDraft() {
+  try {
+    sessionStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // Nothing to clean up if storage was never reachable in the first place.
+  }
+}
 
 interface Props {
   zones: Zone[];
@@ -11,12 +51,16 @@ interface Props {
 }
 
 export function RequestRideForm({ zones, token, onRequested }: Props) {
-  const [pickupZoneId, setPickupZoneId] = useState("");
-  const [destinationZoneId, setDestinationZoneId] = useState("");
-  const [seatsRequested, setSeatsRequested] = useState("1");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CASH");
+  const [pickupZoneId, setPickupZoneId] = useState(() => readDraft().pickupZoneId ?? "");
+  const [destinationZoneId, setDestinationZoneId] = useState(() => readDraft().destinationZoneId ?? "");
+  const [seatsRequested, setSeatsRequested] = useState(() => readDraft().seatsRequested ?? "1");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(() => readDraft().paymentMethod ?? "CASH");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    writeDraft({ pickupZoneId, destinationZoneId, seatsRequested, paymentMethod });
+  }, [pickupZoneId, destinationZoneId, seatsRequested, paymentMethod]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -43,6 +87,7 @@ export function RequestRideForm({ zones, token, onRequested }: Props) {
       setPickupZoneId("");
       setDestinationZoneId("");
       setSeatsRequested("1");
+      clearDraft();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
     } finally {

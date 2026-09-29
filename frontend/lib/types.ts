@@ -11,6 +11,10 @@ export interface PublicUser {
   email: string;
   role: Role;
   walletBalancePaisa: string;
+  // Only present on GET /api/auth/me (see auth.service.ts#getCashTotalPaisa),
+  // not on the leaner login/signup response -- a lifetime cash total, not a
+  // live balance, since cash has no wallet to hold one in.
+  cashTotalPaisa?: string;
 }
 
 export interface AuthResponse {

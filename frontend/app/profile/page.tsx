@@ -73,6 +73,10 @@ export default function ProfilePage() {
             <Row label="Email" value={profile?.email ?? user.email} />
             <Row label="Role" value={profile?.role === "DRIVER" ? "Driver" : "Passenger"} />
             <Row label="TeslaPay wallet" value={formatPaisa(profile?.walletBalancePaisa ?? user.walletBalancePaisa)} />
+            <Row
+              label={user.role === "DRIVER" ? "Cash collected" : "Cash paid"}
+              value={formatPaisa(profile?.cashTotalPaisa ?? "0")}
+            />
           </div>
 
           {user.role === "DRIVER" && vehicle && (
