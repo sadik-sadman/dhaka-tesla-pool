@@ -70,8 +70,10 @@ export interface Pool {
   id: string;
   vehicleId: string;
   pickupZoneId: string;
+  pickupZone?: Zone;
   status: RideStatus;
   occupiedSeats: number;
+  completedAt?: string | null;
   rideRequests: RideRequest[];
 }
 
