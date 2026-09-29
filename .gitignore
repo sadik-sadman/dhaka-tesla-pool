@@ -38,3 +38,6 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+
+# Local convenience scripts (personal, machine-specific -- not for the submission)
+run-dev.bat
