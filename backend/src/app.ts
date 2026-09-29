@@ -1,6 +1,7 @@
 import express, { Application, NextFunction, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
+import morgan from "morgan";
 import { HttpError } from "./lib/errors";
 import { authRouter } from "./modules/auth/auth.routes";
 import { zonesRouter } from "./modules/zones/zones.routes";
@@ -12,6 +13,11 @@ export function createApp(): Application {
 
   app.use(helmet());
   app.use(cors());
+  // Skipped under test -- Jest's own output is noisy enough already, and
+  // these requests aren't real traffic anyone needs an access log for.
+  if (process.env.NODE_ENV !== "test") {
+    app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+  }
   app.use(express.json());
 
   app.get("/health", (_req: Request, res: Response) => {
