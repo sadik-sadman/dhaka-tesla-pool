@@ -81,6 +81,32 @@ describe("auth integration (real Postgres-wire-protocol database)", () => {
     expect(wrongPassword.status).toBe(401);
   });
 
+  it("two concurrent signups for the same email: one succeeds, the other gets a clean 409, never a 500", async () => {
+    const body = {
+      role: "PASSENGER" as const,
+      name: "RaceCondition",
+      email: "race@dhakateslapool.test",
+      password: "supersecret",
+    };
+
+    const [first, second] = await Promise.all([
+      request(app).post("/api/auth/signup").send(body),
+      request(app).post("/api/auth/signup").send(body),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([201, 409]);
+
+    const winner = first.status === 201 ? first : second;
+    expect(typeof winner.body.token).toBe("string");
+
+    const loser = first.status === 201 ? second : first;
+    expect(loser.body.error).toBe("Email already registered");
+
+    const users = await prisma.user.findMany({ where: { email: "race@dhakateslapool.test" } });
+    expect(users).toHaveLength(1);
+  });
+
   it("rejects /me with no token and with a garbage token", async () => {
     const noToken = await request(app).get("/api/auth/me");
     expect(noToken.status).toBe(401);
