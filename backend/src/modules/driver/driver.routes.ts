@@ -19,6 +19,11 @@ driverRouter.get("/dashboard", async (req, res) => {
   res.status(200).json(serializeBigInt(state));
 });
 
+driverRouter.get("/history", async (req, res) => {
+  const history = await driverService.listMyHistory(req.user!.sub);
+  res.status(200).json(serializeBigInt(history));
+});
+
 driverRouter.get("/requests", async (req, res) => {
   const requests = await driverService.listRelevantRequests(req.user!.sub);
   res.status(200).json(serializeBigInt(requests));

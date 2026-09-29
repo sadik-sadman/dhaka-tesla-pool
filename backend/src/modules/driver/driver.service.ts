@@ -319,3 +319,30 @@ export async function completeTrip(driverId: string) {
     return updated;
   });
 }
+
+/**
+ * Past completed trips for this driver's vehicle -- Section 3's driver
+ * feature table explicitly asks for "ride history" alongside the current
+ * passengers/seats view (getMyDashboardState covers the latter; this is
+ * the former). Includes every member a completed pool ever had, including
+ * ones who cancelled before the trip started, for the same reason
+ * ride_status_history exists: a full, honest record of what happened, not
+ * just the passengers who stayed until the end.
+ */
+export async function listMyHistory(driverId: string) {
+  const vehicle = await getVehicleForDriver(driverId);
+
+  return prisma.pool.findMany({
+    where: { vehicleId: vehicle.id, status: "COMPLETED" },
+    include: {
+      pickupZone: true,
+      rideRequests: {
+        include: {
+          destinationZone: true,
+          passenger: { select: { id: true, name: true } },
+        },
+      },
+    },
+    orderBy: { completedAt: "desc" },
+  });
+}

@@ -25,6 +25,7 @@ The product problem, in one paragraph: Nusrat wants to get from Banani to Mohakh
 - Accept a request — capacity-safe, even under concurrent load (see below)
 - Mark arrived → start trip → complete trip, cascading to every pooled passenger at once
 - Fare is finalized on completion, with the pooling discount applied only when 2+ passengers actually shared the ride
+- View ride history (past completed trips, per passenger and fare)
 
 **Pooling / matching**
 - Same-pickup-zone + compatible-destination-corridor rule (documented, not a real routing engine — see [docs/decisions.md](docs/decisions.md#matching-rule))
@@ -278,6 +279,7 @@ All routes except `/health` and `/api/auth/*` require `Authorization: Bearer <to
 | PATCH | `/api/driver/status` | driver | Go online (+ zone) / offline |
 | GET | `/api/driver/dashboard` | driver | My vehicle + active pool state |
 | GET | `/api/driver/requests` | driver | Pending requests at my current zone |
+| GET | `/api/driver/history` | driver | My past completed trips |
 | POST | `/api/driver/requests/:id/accept` | driver | Accept a request (capacity-safe) |
 | POST | `/api/driver/pool/arrived` \| `/start` \| `/complete` | driver | Advance the active trip's lifecycle |
 

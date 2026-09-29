@@ -4,10 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useRequireAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
-import { DriverDashboardState, RideRequest, Vehicle, Zone } from "@/lib/types";
+import { DriverDashboardState, Pool, RideRequest, Vehicle, Zone } from "@/lib/types";
 import { DriverStatusToggle } from "./DriverStatusToggle";
 import { RelevantRequests } from "./RelevantRequests";
 import { ActivePool } from "./ActivePool";
+import { RideHistory } from "./RideHistory";
 
 // Same polling approach as the passenger dashboard -- see
 // docs/tech-justifications.md and app/passenger/page.tsx.
@@ -19,6 +20,8 @@ export default function DriverDashboard() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [dashboard, setDashboard] = useState<DriverDashboardState | null>(null);
   const [relevantRequests, setRelevantRequests] = useState<RideRequest[]>([]);
+  const [history, setHistory] = useState<Pool[]>([]);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
@@ -32,9 +35,13 @@ export default function DriverDashboard() {
       } else {
         setRelevantRequests([]);
       }
+      const pastTrips = await apiFetch<Pool[]>("/api/driver/history", { token });
+      setHistory(pastTrips);
     } catch {
       // A transient poll failure isn't worth surfacing -- the next tick
       // tries again.
+    } finally {
+      setInitialLoadDone(true);
     }
   }, [token]);
 
@@ -78,21 +85,32 @@ export default function DriverDashboard() {
         </button>
       </div>
 
-      {dashboard && (
-        <DriverStatusToggle
-          vehicle={dashboard.vehicle}
-          zones={zones}
-          token={token!}
-          onChanged={handleVehicleChanged}
-        />
-      )}
-
-      {dashboard?.pool ? (
-        <ActivePool pool={dashboard.pool} token={token!} onChanged={refresh} />
+      {!initialLoadDone ? (
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading your dashboard...</p>
       ) : (
-        dashboard?.vehicle.status === "ONLINE" && (
-          <RelevantRequests requests={relevantRequests} token={token!} onAccepted={refresh} />
-        )
+        <>
+          {dashboard && (
+            <DriverStatusToggle
+              vehicle={dashboard.vehicle}
+              zones={zones}
+              token={token!}
+              onChanged={handleVehicleChanged}
+            />
+          )}
+
+          {dashboard?.pool ? (
+            <ActivePool pool={dashboard.pool} token={token!} onChanged={refresh} />
+          ) : (
+            dashboard?.vehicle.status === "ONLINE" && (
+              <RelevantRequests requests={relevantRequests} token={token!} onAccepted={refresh} />
+            )
+          )}
+
+          <div className="flex flex-col gap-3">
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Ride history</h2>
+            <RideHistory pools={history} />
+          </div>
+        </>
       )}
     </div>
   );
