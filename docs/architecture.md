@@ -67,7 +67,7 @@ This keeps "where does the business logic live" (an explicit grading point in Se
 
 | Environment | Frontend | Backend | Database |
 |---|---|---|---|
-| Local dev (no Docker) | `npm run dev` (Next dev server) | `npm run dev` (ts-node-dev) | Postgres via Docker, or `DATABASE_URL` pointed at any Postgres |
+| Local dev (no Docker) | `npm run dev` (Next dev server) | `npm run dev` (ts-node-dev) | `npm run dev:db` — the project's own PGlite engine (see [README](../README.md#local-setup-without-docker)) on a fixed local port, or `DATABASE_URL` pointed at any real Postgres |
 | `docker compose up` | container, built from `frontend/Dockerfile` | container, built from `backend/Dockerfile` | `postgres:16-alpine` container with a named volume |
 | Tests (`npm test` in `backend/`) | — | same Express app, imported directly (supertest) | ephemeral in-process Postgres-compatible engine ([PGlite](https://pglite.dev)), migrated fresh per test run — see [README testing section](../README.md#testing) for why |
 
