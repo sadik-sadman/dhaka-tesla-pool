@@ -17,6 +17,7 @@ The product problem, in one paragraph: Nusrat wants to get from Banani to Mohakh
 - Track ride status live (polling): waiting → matched → driver arrived → in progress → completed
 - View ride history with final fare once completed
 - Cancel a ride while it's still cancellable
+- View their own profile (name, email, role, TeslaPay wallet balance) at `/profile`
 
 **Driver**
 - Sign up together with their vehicle (name + seat capacity) / log in
@@ -26,6 +27,7 @@ The product problem, in one paragraph: Nusrat wants to get from Banani to Mohakh
 - Mark arrived → start trip → complete trip, cascading to every pooled passenger at once
 - Fare is finalized on completion, with the pooling discount applied only when 2+ passengers actually shared the ride
 - View ride history (past completed trips, per passenger and fare)
+- Current zone auto-advances to the trip's farthest drop-off on completion, so the vehicle's declared location keeps tracking reality without manual input — overridable any time from the dashboard (see [docs/decisions.md](docs/decisions.md#driver-location))
 
 **Pooling / matching**
 - Same-pickup-zone + compatible-destination-corridor rule (documented, not a real routing engine — see [docs/decisions.md](docs/decisions.md#matching-rule))
