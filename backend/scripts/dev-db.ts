@@ -8,8 +8,15 @@
 // convenience for a machine without Docker.
 import { startTestDatabase } from "../src/test/db";
 
+// Fixed, not OS-assigned: so DATABASE_URL only ever needs to be set once in
+// backend/.env, instead of changing (and needing to be re-copied) every
+// single time this script restarts. 5433 rather than Postgres's usual 5432,
+// specifically to avoid colliding with a real Postgres instance that might
+// already be running on this machine for something else.
+const DEV_DB_PORT = Number(process.env.DEV_DB_PORT ?? 5433);
+
 async function main() {
-  const db = await startTestDatabase();
+  const db = await startTestDatabase({ port: DEV_DB_PORT });
   // pgbouncer=true tells Prisma's query engine to skip named prepared
   // statements. Needed specifically for this long-lived PGlite instance
   // (unlike the test suite's one-fresh-instance-per-file pattern, this one

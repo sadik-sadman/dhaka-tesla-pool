@@ -7,7 +7,24 @@ import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
 
-async function getFreePort(): Promise<number> {
+async function getFreePort(preferredPort?: number): Promise<number> {
+  if (preferredPort) {
+    // Confirm it's actually free rather than just returning it blindly --
+    // if something else already holds it, fall through to an OS-assigned
+    // port instead of failing outright.
+    const isFree = await new Promise<boolean>((resolve) => {
+      const srv = net.createServer();
+      srv.once("error", () => resolve(false));
+      srv.listen(preferredPort, "127.0.0.1", () => srv.close(() => resolve(true)));
+    });
+    if (isFree) {
+      return preferredPort;
+    }
+  }
+  return getFreeOsAssignedPort();
+}
+
+async function getFreeOsAssignedPort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
     srv.listen(0, () => {
@@ -37,9 +54,9 @@ export interface TestDatabase {
  * talk to a plain `postgresql://` DATABASE_URL through the same Prisma
  * Client. See docs/architecture.md#environments.
  */
-export async function startTestDatabase(): Promise<TestDatabase> {
+export async function startTestDatabase(options: { port?: number } = {}): Promise<TestDatabase> {
   const db = new PGlite();
-  const port = await getFreePort();
+  const port = await getFreePort(options.port);
   const server = new PGLiteSocketServer({
     db,
     port,
