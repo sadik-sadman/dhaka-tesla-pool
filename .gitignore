@@ -23,6 +23,11 @@ coverage/
 backend/prisma/dev.db
 backend/prisma/dev.db-journal
 
+# Local dev-only PGlite data directory (backend/scripts/dev-db.ts) -- a
+# real, growing database on disk, personal to this machine, not the
+# submission's data path (that's Docker's postgres:16-alpine volume)
+backend/.dev-db-data/
+
 # Logs
 npm-debug.log*
 yarn-debug.log*

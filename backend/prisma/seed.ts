@@ -84,12 +84,18 @@ async function main() {
   });
 
   console.log("Seeding Bullet (Jashim's Tesla)...");
+  // update: {} -- once the vehicle exists, its runtime state (online/offline,
+  // current zone) belongs to the app, not the seed script. This upsert used
+  // to force status/currentZoneId back to ONLINE/Banani on every single run,
+  // which silently discarded a driver's real online/offline toggle, a
+  // manual zone change, or the auto-advance-on-completion behavior
+  // (docs/decisions.md#driver-location) every time the backend restarted --
+  // and the Docker image reseeds on every container start (Dockerfile CMD),
+  // so any container restart under memory pressure reset live state anyone
+  // was actively looking at.
   await prisma.vehicle.upsert({
     where: { driverId: jashim.id },
-    update: {
-      status: "ONLINE",
-      currentZoneId: zonesByName.get("Banani"),
-    },
+    update: {},
     create: {
       driverId: jashim.id,
       name: "Bullet",

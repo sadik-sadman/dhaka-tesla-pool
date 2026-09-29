@@ -6,6 +6,7 @@
 // and tears down its own instance) and not part of the production path
 // (docker-compose.yml runs real postgres:16-alpine) -- purely a dev
 // convenience for a machine without Docker.
+import path from "node:path";
 import { startTestDatabase } from "../src/test/db";
 
 // Fixed, not OS-assigned: so DATABASE_URL only ever needs to be set once in
@@ -15,8 +16,15 @@ import { startTestDatabase } from "../src/test/db";
 // already be running on this machine for something else.
 const DEV_DB_PORT = Number(process.env.DEV_DB_PORT ?? 5433);
 
+// On-disk, not in-memory: startTestDatabase() defaults to a pure in-memory
+// PGlite instance, which is correct for the test suite (each test file wants
+// a fresh one) but was silently wiping every seeded account and every ride
+// a developer had set up, every single time this process needed restarting
+// (a crash, a hang, a laptop sleep) -- gitignored, personal-machine-only.
+const DEV_DB_DATA_DIR = path.join(__dirname, "../.dev-db-data");
+
 async function main() {
-  const db = await startTestDatabase({ port: DEV_DB_PORT });
+  const db = await startTestDatabase({ port: DEV_DB_PORT, dataDir: DEV_DB_DATA_DIR });
   // pgbouncer=true tells Prisma's query engine to skip named prepared
   // statements. Needed specifically for this long-lived PGlite instance
   // (unlike the test suite's one-fresh-instance-per-file pattern, this one
