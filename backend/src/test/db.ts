@@ -54,8 +54,17 @@ export interface TestDatabase {
  * talk to a plain `postgresql://` DATABASE_URL through the same Prisma
  * Client. See docs/architecture.md#environments.
  */
-export async function startTestDatabase(options: { port?: number } = {}): Promise<TestDatabase> {
-  const db = new PGlite();
+export async function startTestDatabase(options: { port?: number; dataDir?: string } = {}): Promise<TestDatabase> {
+  // No dataDir (the default, and always the case for the test suite -- see
+  // db.ts's own file-per-run pattern): pure in-memory, gone the instant this
+  // process exits, which is exactly what a test fixture should do. dev-db.ts
+  // passes one specifically to opt OUT of that: a long-lived dev database
+  // that needs to survive its own process being killed and restarted (a
+  // hang, a crash, a machine sleep) without silently wiping every seeded
+  // account and every ride a developer was mid-testing -- in-memory-only
+  // was found to do exactly that while chasing a "state keeps resetting"
+  // report, not by inspection.
+  const db = options.dataDir ? new PGlite(options.dataDir) : new PGlite();
   const port = await getFreePort(options.port);
   const server = new PGLiteSocketServer({
     db,
