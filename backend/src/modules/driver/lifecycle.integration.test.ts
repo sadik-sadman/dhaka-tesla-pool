@@ -212,4 +212,65 @@ describe("driver lifecycle: arrived -> started -> completed (real Postgres-wire-
 
     expect(completed.body[0].finalFarePaisa).toBe("4781"); // BDT 47.81, solo (no pool discount)
   });
+
+  it("GET /api/driver/history shows completed trips, and only this driver's own", async () => {
+    const jashim = await signup(app, {
+      role: "DRIVER",
+      name: "Jashim",
+      email: "jashim.history@test.local",
+      password: "supersecret",
+      vehicleName: "Bullet",
+      vehicleCapacity: 3,
+    });
+    const otherDriver = await signup(app, {
+      role: "DRIVER",
+      name: "OtherDriver",
+      email: "other.history@test.local",
+      password: "supersecret",
+      vehicleName: "OtherCar",
+      vehicleCapacity: 2,
+    });
+    const nusrat = await signup(app, {
+      role: "PASSENGER",
+      name: "Nusrat",
+      email: "nusrat.history@test.local",
+      password: "supersecret",
+    });
+
+    const emptyHistory = await request(app)
+      .get("/api/driver/history")
+      .set("Authorization", `Bearer ${jashim.token}`)
+      .expect(200);
+    expect(emptyHistory.body).toHaveLength(0);
+
+    await request(app)
+      .patch("/api/driver/status")
+      .set("Authorization", `Bearer ${jashim.token}`)
+      .send({ status: "ONLINE", currentZoneId: zones.banani.id })
+      .expect(200);
+    const nusratReq = await request(app)
+      .post("/api/rides")
+      .set("Authorization", `Bearer ${nusrat.token}`)
+      .send({ pickupZoneId: zones.banani.id, destinationZoneId: zones.mohakhali.id })
+      .expect(201);
+    await request(app).post(`/api/driver/requests/${nusratReq.body.id}/accept`).set("Authorization", `Bearer ${jashim.token}`).expect(200);
+    await request(app).post("/api/driver/pool/arrived").set("Authorization", `Bearer ${jashim.token}`).expect(200);
+    await request(app).post("/api/driver/pool/start").set("Authorization", `Bearer ${jashim.token}`).expect(200);
+    await request(app).post("/api/driver/pool/complete").set("Authorization", `Bearer ${jashim.token}`).expect(200);
+
+    const history = await request(app)
+      .get("/api/driver/history")
+      .set("Authorization", `Bearer ${jashim.token}`)
+      .expect(200);
+    expect(history.body).toHaveLength(1);
+    expect(history.body[0].pickupZone.name).toBe("Banani");
+    expect(history.body[0].rideRequests[0].passenger.name).toBe("Nusrat");
+    expect(history.body[0].rideRequests[0].finalFarePaisa).toBe("4781");
+
+    const otherDriverHistory = await request(app)
+      .get("/api/driver/history")
+      .set("Authorization", `Bearer ${otherDriver.token}`)
+      .expect(200);
+    expect(otherDriverHistory.body).toHaveLength(0);
+  });
 });
