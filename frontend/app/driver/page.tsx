@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useRequireAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import { DriverDashboardState, Pool, RideRequest, Vehicle, Zone } from "@/lib/types";
@@ -77,12 +78,20 @@ export default function DriverDashboard() {
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
           Welcome, {user.name}
         </h1>
-        <button
-          onClick={handleLogout}
-          className="rounded-full border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
-        >
-          Log out
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/profile"
+            className="rounded-full border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
+          >
+            Profile
+          </Link>
+          <button
+            onClick={handleLogout}
+            className="rounded-full border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
+          >
+            Log out
+          </button>
+        </div>
       </div>
 
       {!initialLoadDone ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch, ApiError } from "@/lib/api";
 import { Vehicle, Zone } from "@/lib/types";
 
@@ -15,26 +15,43 @@ export function DriverStatusToggle({ vehicle, zones, token, onChanged }: Props) 
   const [zoneId, setZoneId] = useState(vehicle.currentZoneId ?? "");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const currentZoneName = zones.find((z) => z.id === vehicle.currentZoneId)?.name;
 
-  async function goOnline() {
-    if (!zoneId) {
-      setError("Pick your current zone first.");
+  // The dashboard poll can change vehicle.currentZoneId from outside (e.g.
+  // completeTrip() advancing it automatically) -- keep the dropdown's local
+  // selection in sync with that, not just with what this component itself set.
+  useEffect(() => {
+    queueMicrotask(() => setZoneId(vehicle.currentZoneId ?? ""));
+  }, [vehicle.currentZoneId]);
+
+  async function setZone(nextZoneId: string) {
+    if (!nextZoneId) {
+      setError("Pick a zone first.");
       return;
     }
     setError(null);
     setSubmitting(true);
     try {
+      // Also used to manually correct the current zone while already
+      // online -- completeTrip() advances it automatically to the
+      // farthest drop-off (see docs/decisions.md#driver-location), but a
+      // driver who actually ended up somewhere else can override it here
+      // any time, without needing to go offline and back online.
       const updated = await apiFetch<Vehicle>("/api/driver/status", {
         method: "PATCH",
         token,
-        body: { status: "ONLINE", currentZoneId: zoneId },
+        body: { status: "ONLINE", currentZoneId: nextZoneId },
       });
       onChanged(updated);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not go online.");
+      setError(err instanceof ApiError ? err.message : "Could not update zone.");
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function goOnline() {
+    return setZone(zoneId);
   }
 
   async function goOffline() {
@@ -62,18 +79,40 @@ export function DriverStatusToggle({ vehicle, zones, token, onChanged }: Props) 
             {vehicle.name} &middot; {vehicle.capacity} seats
           </p>
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            {vehicle.status === "ONLINE" ? "Online" : "Offline"}
+            {vehicle.status === "ONLINE"
+              ? `Online${currentZoneName ? ` at ${currentZoneName}` : ""}`
+              : "Offline"}
           </p>
         </div>
 
         {vehicle.status === "ONLINE" ? (
-          <button
-            onClick={goOffline}
-            disabled={submitting}
-            className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
-          >
-            Go offline
-          </button>
+          <div className="flex items-center gap-2">
+            <select
+              value={zoneId}
+              onChange={(e) => setZoneId(e.target.value)}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+            >
+              {zones.map((zone) => (
+                <option key={zone.id} value={zone.id}>
+                  {zone.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setZone(zoneId)}
+              disabled={submitting || zoneId === vehicle.currentZoneId}
+              className="rounded-full border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
+            >
+              Update zone
+            </button>
+            <button
+              onClick={goOffline}
+              disabled={submitting}
+              className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-900 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
+            >
+              Go offline
+            </button>
+          </div>
         ) : (
           <div className="flex items-center gap-2">
             <select
