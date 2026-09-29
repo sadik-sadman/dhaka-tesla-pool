@@ -122,6 +122,7 @@ Full field list, constraints, and indexes: **[docs/erd.md](docs/erd.md)**.
 | Database | PostgreSQL 16 (via Docker), Prisma ORM | Relational by nature (capacity constraints, foreign keys); Postgres's MVCC is what makes the capacity-safe `UPDATE` correct, not just accidentally-safe |
 | Auth | JWT (bearer token), bcryptjs | Stateless, no shared session store to scale; `bcryptjs` over native `bcrypt` to avoid a C++ build toolchain dependency |
 | Validation | Zod | Schema *is* the TypeScript type — one definition, not two that can drift |
+| Security / logging | Helmet, CORS, Morgan (HTTP access logs) | Standard Express middleware for response headers, cross-origin policy, and request logging — no reason to hand-roll any of these |
 | Testing | Jest + Supertest, plus PGlite for a real (not mocked) ephemeral database in CI | See [How to run tests](#how-to-run-tests) |
 
 Every one of these has a full write-up — what was picked, the real alternatives, why, and what would change the answer later — in **[docs/tech-justifications.md](docs/tech-justifications.md)**.
@@ -200,8 +201,12 @@ docker compose up --build
 # Backend
 cd backend
 npm install
-cp .env.example .env        # point DATABASE_URL at any Postgres you have
-                             # (no Postgres handy? npm run dev:db starts a throwaway one)
+npm run dev:db               # starts the project's own local database on a
+                              # fixed port (5433) -- leave this running in its
+                              # own terminal; set up .env once and forget it
+cp .env.example .env
+# then edit backend/.env: DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5433/postgres?schema=public&pgbouncer=true"
+# (or point it at any real Postgres you have instead, on its usual port)
 npx prisma migrate deploy
 npm run build && npm run prisma:seed   # or: npm run prisma:seed:dev (faster, no build step)
 npm run dev                 # http://localhost:4000
@@ -238,11 +243,11 @@ cd backend
 npm test
 ```
 
-27 tests across 6 suites — unit tests for the pure fare/JWT logic, and integration tests that run the real Express app against an ephemeral, real Postgres-wire-protocol database (no mocks). Covers, among other things:
+29 tests across 6 suites — unit tests for the pure fare/JWT logic, and integration tests that run the real Express app against an ephemeral, real Postgres-wire-protocol database (no mocks). Covers, among other things:
 
 - The PRD's named concurrency scenario verbatim: Bullet has 1 seat left, two passengers race for it — exactly one gets `200`, the other `409`, and `occupied_seats` never exceeds `capacity`
 - The matching rule (pool despite different destinations when corridors match; reject when they don't)
-- A passenger can't cancel or view another passenger's ride
+- A passenger can't cancel or view another passenger's ride, and a driver can't act on another driver's active pool or see another driver's ride history
 - Fare finalization matches the hand-verified numbers below exactly
 
 There's no Docker daemon in the environment this was built in, so `docker compose up` itself hasn't been run end-to-end there. What was verified instead: the compose YAML parses correctly, and the exact commands the container runs on startup (`prisma migrate deploy`, then the compiled seed script) were run successfully against a `node_modules` containing only the production dependencies — the same dependency set the built image would actually ship. Still worth running `docker compose up` for real at least once before treating Docker packaging as fully proven.
