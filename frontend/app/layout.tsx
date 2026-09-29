@@ -23,6 +23,14 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      // Browser extensions (password managers, ad blockers, etc.) can inject
+      // attributes into <html> before React hydrates -- e.g. data-psi-id,
+      // seen in dev with certain Chrome extensions installed. That's a
+      // mismatch React can never resolve because it doesn't come from this
+      // app's own render output. suppressHydrationWarning on this one node
+      // is React's documented escape hatch for exactly that case; it does
+      // not suppress warnings for any other real mismatch in the tree.
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
         <AuthProvider>{children}</AuthProvider>
