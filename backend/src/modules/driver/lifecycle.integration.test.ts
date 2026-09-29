@@ -180,6 +180,18 @@ describe("driver lifecycle: arrived -> started -> completed (real Postgres-wire-
     // be Gulshan 1, not left stale at the pickup zone.
     const jashimVehicle = await prisma.vehicle.findUniqueOrThrow({ where: { driverId: jashim.user.id } });
     expect(jashimVehicle.currentZoneId).toBe(zones.gulshan1.id);
+
+    // Cash has no wallet -- GET /me reports a lifetime total instead (see
+    // auth.service.ts#getCashTotalPaisa). Only Nusrat paid cash (3825);
+    // Rafiq paid TeslaPay, so it shouldn't count towards anyone's cash total.
+    const nusratMe = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${nusrat.token}`).expect(200);
+    expect(nusratMe.body.cashTotalPaisa).toBe("3825");
+
+    const jashimMe = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${jashim.token}`).expect(200);
+    expect(jashimMe.body.cashTotalPaisa).toBe("3825");
+
+    const rafiqMe = await request(app).get("/api/auth/me").set("Authorization", `Bearer ${rafiq.token}`).expect(200);
+    expect(rafiqMe.body.cashTotalPaisa).toBe("0");
   });
 
   it("a solo (unpooled) trip is charged the full fare, no discount", async () => {

@@ -92,7 +92,29 @@ export async function login(input: LoginInput) {
   return { token, user: toPublicUser(user) };
 }
 
+/**
+ * Cash has no wallet to hold a balance in -- it's paid straight to the
+ * driver in person -- so "how much cash" only makes sense as a lifetime
+ * total, not a live balance. Meaning differs by role: a passenger's total
+ * is what they've paid out in cash across their own rides; a driver's is
+ * what they've physically collected in cash across every trip their
+ * vehicle has served.
+ */
+async function getCashTotalPaisa(userId: string, role: string): Promise<string> {
+  const where =
+    role === "DRIVER"
+      ? { method: "CASH" as const, rideRequest: { pool: { vehicle: { driverId: userId } } } }
+      : { method: "CASH" as const, rideRequest: { passengerId: userId } };
+
+  const result = await prisma.payment.aggregate({ where, _sum: { amountPaisa: true } });
+  return (result._sum.amountPaisa ?? 0n).toString();
+}
+
 export async function getById(userId: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  return user ? toPublicUser(user) : null;
+  if (!user) {
+    return null;
+  }
+  const cashTotalPaisa = await getCashTotalPaisa(user.id, user.role);
+  return { ...toPublicUser(user), cashTotalPaisa };
 }
