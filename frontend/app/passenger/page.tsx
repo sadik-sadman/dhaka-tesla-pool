@@ -18,6 +18,7 @@ export default function PassengerDashboard() {
   const router = useRouter();
   const [zones, setZones] = useState<Zone[]>([]);
   const [rideRequests, setRideRequests] = useState<RideRequest[]>([]);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refreshRides = useCallback(async () => {
@@ -28,6 +29,8 @@ export default function PassengerDashboard() {
     } catch {
       // A transient poll failure isn't worth surfacing to the user -- the
       // next tick tries again.
+    } finally {
+      setInitialLoadDone(true);
     }
   }, [token]);
 
@@ -66,22 +69,28 @@ export default function PassengerDashboard() {
         </button>
       </div>
 
-      <RequestRideForm
-        zones={zones}
-        token={token!}
-        onRequested={(rideRequest) => setRideRequests((prev) => [rideRequest, ...prev])}
-      />
+      {!initialLoadDone ? (
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading your dashboard...</p>
+      ) : (
+        <>
+          <RequestRideForm
+            zones={zones}
+            token={token!}
+            onRequested={(rideRequest) => setRideRequests((prev) => [rideRequest, ...prev])}
+          />
 
-      <div className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Your rides</h2>
-        <RideList
-          rideRequests={rideRequests}
-          token={token!}
-          onCancelled={(updated) =>
-            setRideRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
-          }
-        />
-      </div>
+          <div className="flex flex-col gap-3">
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Your rides</h2>
+            <RideList
+              rideRequests={rideRequests}
+              token={token!}
+              onCancelled={(updated) =>
+                setRideRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)))
+              }
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
