@@ -250,7 +250,9 @@ npm test
 - A passenger can't cancel or view another passenger's ride, and a driver can't act on another driver's active pool or see another driver's ride history
 - Fare finalization matches the hand-verified numbers below exactly
 
-There's no Docker daemon in the environment this was built in, so `docker compose up` itself hasn't been run end-to-end there. What was verified instead: the compose YAML parses correctly, and the exact commands the container runs on startup (`prisma migrate deploy`, then the compiled seed script) were run successfully against a `node_modules` containing only the production dependencies — the same dependency set the built image would actually ship. Still worth running `docker compose up` for real at least once before treating Docker packaging as fully proven.
+`docker compose up --build` has been run end-to-end against a real Docker daemon: all three containers build and start, the backend applies both migrations and seeds the story cast automatically, both `db` and `backend` report `healthy`, and a full login → driver dashboard flow was confirmed through the actual frontend against the actual backend, container to container.
+
+**Windows troubleshooting**: if `docker compose up` fails with `ports are not available: exposing port TCP 0.0.0.0:4000 ...: access forbidden by its access permissions`, that's not this project — it's Windows/Hyper-V's dynamic port-exclusion range occasionally claiming port 4000 (check with `netsh interface ipv4 show excludedportrange protocol=tcp`). Fix by restarting the NAT service from an elevated prompt (`net stop winnat && net start winnat`) or rebooting; both release the reservation.
 
 ## Fare model (hand-verifiable)
 
@@ -304,7 +306,6 @@ The PRD deliberately leaves parts of the spec open (Section 17). Every assumptio
 - **No low-balance decline for TeslaPay** — the simulated wallet can go negative; a real decline/retry flow is out of MVP scope (documented assumption, not an oversight)
 - **Polling, not push** — the frontend polls every 4 seconds rather than using a WebSocket/SSE connection; deliberate, see [docs/tech-justifications.md](docs/tech-justifications.md)
 - **One vehicle per driver** — no fleet/shift model; see [docs/decisions.md](docs/decisions.md#one-vehicle-per-driver)
-- **`docker compose up` not run end-to-end in this dev environment** — see [How to run tests](#how-to-run-tests)
 
 ## Next improvements
 
