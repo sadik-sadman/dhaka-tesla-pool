@@ -269,6 +269,14 @@ export async function startTrip(driverId: string) {
  * unconditionally, even into a negative balance -- a low-balance
  * decline/retry flow is a documented out-of-scope simplification (Section
  * 17), not an oversight.
+ *
+ * No real routing means there's no actual drop-off order to follow, so the
+ * vehicle's new current_zone_id is set to whichever active member's
+ * destination is farthest from the pickup zone -- a real driver dropping
+ * off a pooled group one-by-one along a shared corridor ends the trip at
+ * the far end of it, not back at the first stop. Documented assumption,
+ * see docs/decisions.md#driver-location. A driver can still override this
+ * manually at any time via PATCH /api/driver/status.
  */
 export async function completeTrip(driverId: string) {
   const vehicle = await getVehicleForDriver(driverId);
@@ -279,6 +287,9 @@ export async function completeTrip(driverId: string) {
 
   const pooled = pool.rideRequests.length >= 2;
 
+  let farthestZoneId: string | null = null;
+  let farthestKm = -1;
+
   return prisma.$transaction(async (tx) => {
     await tx.pool.update({ where: { id: pool.id }, data: { status: "COMPLETED", completedAt: new Date() } });
 
@@ -286,6 +297,11 @@ export async function completeTrip(driverId: string) {
     for (const member of pool.rideRequests) {
       const distanceKm = haversineKm(member.pickupZone, member.destinationZone);
       const finalFarePaisa = calculateFarePaisa(distanceKm, pooled);
+
+      if (distanceKm > farthestKm) {
+        farthestKm = distanceKm;
+        farthestZoneId = member.destinationZoneId;
+      }
 
       updated.push(
         await tx.rideRequest.update({
@@ -314,6 +330,10 @@ export async function completeTrip(driverId: string) {
           paidAt: new Date(),
         },
       });
+    }
+
+    if (farthestZoneId) {
+      await tx.vehicle.update({ where: { id: vehicle.id }, data: { currentZoneId: farthestZoneId } });
     }
 
     return updated;
