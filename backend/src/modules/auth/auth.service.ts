@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { signAuthToken } from "../../lib/jwt";
 import { ConflictError, UnauthorizedError } from "../../lib/errors";
@@ -32,28 +33,43 @@ export async function signup(input: SignupInput) {
 
   const passwordHash = await bcrypt.hash(input.password, SALT_ROUNDS);
 
-  const user = await prisma.$transaction(async (tx) => {
-    const created = await tx.user.create({
-      data: {
-        name: input.name,
-        email: input.email,
-        passwordHash,
-        role: input.role,
-      },
-    });
-
-    if (input.role === "DRIVER") {
-      await tx.vehicle.create({
+  let user;
+  try {
+    user = await prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
         data: {
-          driverId: created.id,
-          name: input.vehicleName,
-          capacity: input.vehicleCapacity,
+          name: input.name,
+          email: input.email,
+          passwordHash,
+          role: input.role,
         },
       });
-    }
 
-    return created;
-  });
+      if (input.role === "DRIVER") {
+        await tx.vehicle.create({
+          data: {
+            driverId: created.id,
+            name: input.vehicleName,
+            capacity: input.vehicleCapacity,
+          },
+        });
+      }
+
+      return created;
+    });
+  } catch (err) {
+    // The check above is a read-then-write -- two signups for the same
+    // email landing at nearly the same instant can both pass it before
+    // either commits, so the database's own unique constraint is the real
+    // guard. Without this catch, the loser's raw Prisma P2002 error bubbled
+    // up as an unhandled 500 instead of the same clean 409 the sequential
+    // case already gets -- found by actually firing two concurrent signups,
+    // not by inspection.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      throw new ConflictError("Email already registered");
+    }
+    throw err;
+  }
 
   const token = signAuthToken({ sub: user.id, role: user.role });
   return { token, user: toPublicUser(user) };
