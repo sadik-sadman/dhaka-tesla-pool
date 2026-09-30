@@ -245,12 +245,13 @@ cd backend
 npm test
 ```
 
-29 tests across 6 suites — unit tests for the pure fare/JWT logic, and integration tests that run the real Express app against an ephemeral, real Postgres-wire-protocol database (no mocks). Covers, among other things:
+30 tests across 6 suites — unit tests for the pure fare/JWT logic, and integration tests that run the real Express app against an ephemeral, real Postgres-wire-protocol database (no mocks). Covers, among other things:
 
 - The PRD's named concurrency scenario verbatim: Bullet has 1 seat left, two passengers race for it — exactly one gets `200`, the other `409`, and `occupied_seats` never exceeds `capacity`
 - The matching rule (pool despite different destinations when corridors match; reject when they don't)
 - A passenger can't cancel or view another passenger's ride, and a driver can't act on another driver's active pool or see another driver's ride history
 - Fare finalization matches the hand-verified numbers below exactly
+- Two concurrent signups for the same email: exactly one succeeds, the other gets a clean `409`, never an unhandled `500`
 
 `docker compose up --build` has been run end-to-end against a real Docker daemon: all three containers build and start, the backend applies both migrations and seeds the story cast automatically, both `db` and `backend` report `healthy`, and a full login → driver dashboard flow was confirmed through the actual frontend against the actual backend, container to container.
 
