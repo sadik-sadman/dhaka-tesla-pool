@@ -1,11 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useRequireAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import { formatPaisa } from "@/lib/money";
 import { DriverDashboardState, PublicUser, Zone } from "@/lib/types";
+
+// Same polling approach as the dashboards (see app/driver/page.tsx) -- this
+// page used to be a one-shot fetch on mount, which meant a read that raced
+// ahead of a very recent write (e.g. landing here right after "Go online",
+// before that PATCH had actually committed) showed a stale snapshot
+// *forever*, with nothing to ever correct it. Polling makes that self-heal
+// within one tick instead of needing a manual reload.
+const POLL_INTERVAL_MS = 4000;
 
 export default function ProfilePage() {
   const { user, token, loading, logout } = useRequireAuth();
@@ -16,39 +25,44 @@ export default function ProfilePage() {
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const zonesLoadedRef = useRef(false);
+
+  const load = useCallback(async () => {
+    if (!token || !user) return;
+    try {
+      const me = await apiFetch<PublicUser>("/api/auth/me", { token });
+      setProfile(me);
+
+      if (user.role === "DRIVER") {
+        if (!zonesLoadedRef.current) {
+          const zoneList = await apiFetch<Zone[]>("/api/zones", { token });
+          setZones(zoneList);
+          zonesLoadedRef.current = true;
+        }
+        const dashboard = await apiFetch<DriverDashboardState>("/api/driver/dashboard", { token });
+        setVehicle(dashboard.vehicle);
+      }
+      // Only on success -- see driver/page.tsx's refresh() for the full
+      // reasoning: a failed fetch must never be treated the same as a
+      // successful one showing real (if empty) data.
+      setInitialLoadDone(true);
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
+    }
+  }, [token, user]);
 
   useEffect(() => {
     if (!token || !user) return;
 
-    async function load() {
-      try {
-        const me = await apiFetch<PublicUser>("/api/auth/me", { token });
-        setProfile(me);
-
-        if (user!.role === "DRIVER") {
-          const [dashboard, zoneList] = await Promise.all([
-            apiFetch<DriverDashboardState>("/api/driver/dashboard", { token }),
-            apiFetch<Zone[]>("/api/zones", { token }),
-          ]);
-          setVehicle(dashboard.vehicle);
-          setZones(zoneList);
-        }
-        // Only on success -- see driver/page.tsx's refresh() for the full
-        // reasoning. Here it matters even more: this page has no poll loop
-        // to silently correct a stale render on the next tick the way the
-        // dashboards do, so a failed fetch must never be treated the same
-        // as a successful one showing real (if empty) data -- that's how a
-        // transient error here previously rendered as "Status: Offline"
-        // for a vehicle that was actually online, instead of surfacing the
-        // failure.
-        setInitialLoadDone(true);
-        setLoadError(false);
-      } catch {
-        setLoadError(true);
-      }
-    }
     queueMicrotask(load);
-  }, [token, user, retryCount]);
+
+    pollRef.current = setInterval(load, POLL_INTERVAL_MS);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, [token, user, load, retryCount]);
 
   if (loading || !user) {
     return null;
@@ -65,12 +79,20 @@ export default function ProfilePage() {
     <div className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 bg-zinc-50 px-6 py-10 dark:bg-black">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Profile</h1>
-        <button
-          onClick={handleLogout}
-          className="rounded-full border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
-        >
-          Log out
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href={user.role === "DRIVER" ? "/driver" : "/passenger"}
+            className="rounded-full border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
+          >
+            Dashboard
+          </Link>
+          <button
+            onClick={handleLogout}
+            className="rounded-full border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
+          >
+            Log out
+          </button>
+        </div>
       </div>
 
       {!initialLoadDone ? (
