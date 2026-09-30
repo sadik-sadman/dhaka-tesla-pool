@@ -329,8 +329,10 @@ Ownership means being able to explain, debug, redesign, or change any of this li
 
 ## Deployment URL
 
-Not yet deployed. Docker packaging (see above) is deployment-ready; a live URL will be added here once deployed to a free-tier host.
+**Live deployment**: [https://frontend-production-58f8.up.railway.app/](https://frontend-production-58f8.up.railway.app/)
+
+The application is fully deployed and runnable on Railway.
 
 ## Demo video
 
-Not yet recorded. Will be linked here (max 6 minutes, structured per the PRD: problem understanding, engineering walkthrough, product tour) once recorded.
+**Watch the walkthrough**: [Google Drive Video Link](https://drive.google.com/file/d/1Dcb6UgFC4s37hwG4b_T06PZ0NTK3xZUy/view?usp=sharing)
