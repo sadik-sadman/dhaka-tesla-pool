@@ -56,6 +56,11 @@ export function ActivePool({ pool, token, onChanged }: Props) {
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
           {pool.occupiedSeats} seat{pool.occupiedSeats !== 1 ? "s" : ""} occupied
         </p>
+        {pool.status === "MATCHED_ACCEPTED" && (
+          <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            ● Pooling window open — you can still accept more passengers below before marking arrived.
+          </p>
+        )}
       </div>
 
       {error && (

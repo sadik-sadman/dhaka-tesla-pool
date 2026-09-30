@@ -9,9 +9,11 @@ interface Props {
   requests: RideRequest[];
   token: string;
   onAccepted: () => void;
+  /** Override the section heading; defaults to "Relevant requests". */
+  heading?: string;
 }
 
-export function RelevantRequests({ requests, token, onAccepted }: Props) {
+export function RelevantRequests({ requests, token, onAccepted, heading = "Relevant requests" }: Props) {
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,7 +32,7 @@ export function RelevantRequests({ requests, token, onAccepted }: Props) {
 
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Relevant requests</h2>
+      <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">{heading}</h2>
 
       {error && (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">

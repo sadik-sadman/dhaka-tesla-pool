@@ -71,7 +71,15 @@ export default function DriverDashboard() {
     setInitialLoadDone(true);
     setLoadError(false);
 
-    if (state.vehicle.status === "ONLINE" && !state.pool) {
+    // Fetch pending requests whenever the vehicle is ONLINE — even with an
+    // active pool — as long as the pooling window is still open
+    // (MATCHED_ACCEPTED). Once the driver marks arrived the window closes
+    // (DRIVER_ARRIVED / STARTED) and we clear the list.
+    const poolingWindowOpen =
+      state.vehicle.status === "ONLINE" &&
+      (!state.pool || state.pool.status === "MATCHED_ACCEPTED");
+
+    if (poolingWindowOpen) {
       try {
         const requests = await apiFetch<RideRequest[]>("/api/driver/requests", { token });
         if (seq === requestSeqRef.current) setRelevantRequests(requests);
@@ -159,6 +167,18 @@ export default function DriverDashboard() {
             dashboard?.vehicle.status === "ONLINE" && (
               <RelevantRequests requests={relevantRequests} token={token!} onAccepted={refresh} />
             )
+          )}
+
+          {/* While a pool is open but not yet started, the driver can still
+              accept more passengers into it — show remaining pending requests
+              below the active pool card so they know more riders are waiting. */}
+          {dashboard?.pool?.status === "MATCHED_ACCEPTED" && relevantRequests.length > 0 && (
+            <RelevantRequests
+              requests={relevantRequests}
+              token={token!}
+              onAccepted={refresh}
+              heading="Add more passengers"
+            />
           )}
 
           <div className="flex flex-col gap-3">

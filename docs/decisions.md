@@ -40,7 +40,7 @@ The feature table (Section 3) gives the driver an explicit **"see relevant reque
 
 - A new `REQUESTED` ride request is immediately visible to any `ONLINE` driver whose vehicle's `current_zone_id` matches the request's pickup zone (that's the "in about a second" part — the *candidate* match is instant and automatic).
 - The driver still has to press **Accept** to actually take it. Accepting is the one operation that mutates `pools.occupied_seats`, atomically and capacity-checked (see below) — so "accept" is also literally "reserve the seat," not a rubber stamp on a decision already made elsewhere.
-- A second, third (etc.) compatible request can be accepted into the same pool up until `DRIVER_ARRIVED`.
+- A second, third (etc.) compatible request can be accepted into the same pool up until `DRIVER_ARRIVED`. The driver dashboard keeps an **"Add more passengers"** list visible alongside the active pool card for exactly this window — once they click **"Mark arrived"** the list disappears and no further passengers can join.
 
 ## Concurrency
 
