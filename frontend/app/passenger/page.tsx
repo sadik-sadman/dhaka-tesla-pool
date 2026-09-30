@@ -22,9 +22,17 @@ export default function PassengerDashboard() {
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const zonesLoadedRef = useRef(false);
+  const requestSeqRef = useRef(0);
 
   const refreshRides = useCallback(async () => {
     if (!token) return;
+    // See driver/page.tsx's refresh() for the full reasoning: nothing
+    // cancels an older in-flight poll tick, so on a machine with variable
+    // response times an older, slower request can resolve *after* a newer
+    // one and overwrite fresher state with stale data. This makes a
+    // response a no-op once a newer refreshRides() call has already
+    // started, regardless of which one's round-trip finishes first.
+    const seq = ++requestSeqRef.current;
     // Independent of the rides fetch below and retried on the same tick
     // until it succeeds once, instead of a separate one-shot fetch-on-mount
     // that just gave up for the rest of the session on a single bad tick --
@@ -33,21 +41,25 @@ export default function PassengerDashboard() {
     if (!zonesLoadedRef.current) {
       try {
         const zoneList = await apiFetch<Zone[]>("/api/zones", { token });
-        setZones(zoneList);
-        zonesLoadedRef.current = true;
+        if (seq === requestSeqRef.current) {
+          setZones(zoneList);
+          zonesLoadedRef.current = true;
+        }
       } catch {
         // Retried next tick.
       }
     }
     try {
       const rides = await apiFetch<RideRequest[]>("/api/rides", { token });
-      setRideRequests(rides);
-      // Only on success -- see driver/page.tsx's refresh() for why marking
-      // the first load "done" on a caught error (via `finally`) is wrong:
-      // it made a transient failure on the very first fetch flip the page
-      // straight to "loaded" with empty data, instead of staying in its
-      // loading state until a real answer came back.
-      setInitialLoadDone(true);
+      if (seq === requestSeqRef.current) {
+        setRideRequests(rides);
+        // Only on success -- see driver/page.tsx's refresh() for why
+        // marking the first load "done" on a caught error (via `finally`)
+        // is wrong: it made a transient failure on the very first fetch
+        // flip the page straight to "loaded" with empty data, instead of
+        // staying in its loading state until a real answer came back.
+        setInitialLoadDone(true);
+      }
     } catch {
       // Swallowed here deliberately -- see the comment above.
     }
