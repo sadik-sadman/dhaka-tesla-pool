@@ -21,24 +21,41 @@ export default function PassengerDashboard() {
   const [rideRequests, setRideRequests] = useState<RideRequest[]>([]);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const zonesLoadedRef = useRef(false);
 
   const refreshRides = useCallback(async () => {
     if (!token) return;
+    // Independent of the rides fetch below and retried on the same tick
+    // until it succeeds once, instead of a separate one-shot fetch-on-mount
+    // that just gave up for the rest of the session on a single bad tick --
+    // zonesLoadedRef, not `zones.length`, so this doesn't need `zones` in
+    // this callback's own dependency array.
+    if (!zonesLoadedRef.current) {
+      try {
+        const zoneList = await apiFetch<Zone[]>("/api/zones", { token });
+        setZones(zoneList);
+        zonesLoadedRef.current = true;
+      } catch {
+        // Retried next tick.
+      }
+    }
     try {
       const rides = await apiFetch<RideRequest[]>("/api/rides", { token });
       setRideRequests(rides);
-    } catch {
-      // A transient poll failure isn't worth surfacing to the user -- the
-      // next tick tries again.
-    } finally {
+      // Only on success -- see driver/page.tsx's refresh() for why marking
+      // the first load "done" on a caught error (via `finally`) is wrong:
+      // it made a transient failure on the very first fetch flip the page
+      // straight to "loaded" with empty data, instead of staying in its
+      // loading state until a real answer came back.
       setInitialLoadDone(true);
+    } catch {
+      // Swallowed here deliberately -- see the comment above.
     }
   }, [token]);
 
   useEffect(() => {
     if (!token) return;
 
-    apiFetch<Zone[]>("/api/zones", { token }).then(setZones).catch(() => setZones([]));
     queueMicrotask(refreshRides);
 
     pollRef.current = setInterval(refreshRides, POLL_INTERVAL_MS);
