@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useRequireAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import { formatPaisa } from "@/lib/money";
 import { DriverDashboardState, PublicUser, Zone } from "@/lib/types";
+import { useSerialPolling } from "@/lib/use-serial-polling";
 
 // Same polling approach as the dashboards (see app/driver/page.tsx) -- this
 // page used to be a one-shot fetch on mount, which meant a read that raced
@@ -24,8 +25,6 @@ export default function ProfilePage() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [loadError, setLoadError] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const zonesLoadedRef = useRef(false);
   const requestSeqRef = useRef(0);
 
@@ -41,50 +40,39 @@ export default function ProfilePage() {
     // once a newer load() call has already started, regardless of which
     // one's round-trip finishes first.
     const seq = ++requestSeqRef.current;
-    try {
-      const me = await apiFetch<PublicUser>("/api/auth/me", { token });
-      const isStillLatest = seq === requestSeqRef.current;
-      if (isStillLatest) {
-        setProfile(me);
-      }
+    const [profileResult, vehicleResult, zonesResult] = await Promise.allSettled([
+      apiFetch<PublicUser>("/api/auth/me", { token }),
+      user.role === "DRIVER"
+        ? apiFetch<DriverDashboardState>("/api/driver/dashboard", { token })
+        : Promise.resolve<DriverDashboardState | null>(null),
+      user.role === "DRIVER" && !zonesLoadedRef.current
+        ? apiFetch<Zone[]>("/api/zones", { token })
+        : Promise.resolve<Zone[] | null>(null),
+    ]);
 
-      if (user.role === "DRIVER") {
-        if (!zonesLoadedRef.current) {
-          const zoneList = await apiFetch<Zone[]>("/api/zones", { token });
-          if (seq === requestSeqRef.current) {
-            setZones(zoneList);
-            zonesLoadedRef.current = true;
-          }
-        }
-        const dashboard = await apiFetch<DriverDashboardState>("/api/driver/dashboard", { token });
-        if (seq === requestSeqRef.current) {
-          setVehicle(dashboard.vehicle);
-        }
-      }
-      // Only on success -- see driver/page.tsx's refresh() for the full
-      // reasoning: a failed fetch must never be treated the same as a
-      // successful one showing real (if empty) data.
-      if (seq === requestSeqRef.current) {
-        setInitialLoadDone(true);
-        setLoadError(false);
-      }
-    } catch {
-      if (seq === requestSeqRef.current) {
-        setLoadError(true);
-      }
+    if (seq !== requestSeqRef.current) return;
+
+    if (profileResult.status === "fulfilled") setProfile(profileResult.value);
+    if (vehicleResult.status === "fulfilled" && vehicleResult.value) {
+      setVehicle(vehicleResult.value.vehicle);
+    }
+    if (zonesResult.status === "fulfilled" && zonesResult.value) {
+      setZones(zonesResult.value);
+      zonesLoadedRef.current = true;
+    }
+
+    const essentialDataLoaded =
+      profileResult.status === "fulfilled" &&
+      (user.role !== "DRIVER" || (vehicleResult.status === "fulfilled" && vehicleResult.value !== null));
+    if (essentialDataLoaded) {
+      setInitialLoadDone(true);
+      setLoadError(false);
+    } else {
+      setLoadError(true);
     }
   }, [token, user]);
 
-  useEffect(() => {
-    if (!token || !user) return;
-
-    queueMicrotask(load);
-
-    pollRef.current = setInterval(load, POLL_INTERVAL_MS);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [token, user, load, retryCount]);
+  useSerialPolling(load, POLL_INTERVAL_MS, Boolean(token && user));
 
   if (loading || !user) {
     return null;
@@ -124,7 +112,7 @@ export default function ProfilePage() {
               Couldn&apos;t load your profile. Please try again.
             </p>
             <button
-              onClick={() => setRetryCount((n) => n + 1)}
+              onClick={load}
               className="rounded-full border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
             >
               Retry
@@ -151,7 +139,22 @@ export default function ProfilePage() {
               <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Vehicle</h2>
               <Row label="Name" value={vehicle.name} />
               <Row label="Capacity" value={`${vehicle.capacity} seats`} />
-              <Row label="Status" value={vehicle.status === "ONLINE" ? "Online" : "Offline"} />
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <span className="text-zinc-500 dark:text-zinc-400">Status</span>
+                <span
+                  className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-xs font-medium ${
+                    vehicle.status === "ONLINE"
+                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                      : "bg-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`h-1.5 w-1.5 rounded-full ${vehicle.status === "ONLINE" ? "bg-emerald-500" : "bg-zinc-400"}`}
+                  />
+                  {vehicle.status === "ONLINE" ? "Online" : "Offline"}
+                </span>
+              </div>
               <Row label="Current zone" value={currentZoneName ?? "Not set"} />
             </div>
           )}

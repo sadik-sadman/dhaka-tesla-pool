@@ -160,9 +160,34 @@ If you only remember one sentence from this file: **every row below has a real r
 
 ---
 
-## Not yet decided (will be added here when built)
+## 10. Dashboard updates — completion-scheduled polling with plain `fetch`
 
-- Frontend styling approach beyond plain Tailwind utility classes (a component library, if the UI grows enough to want one) — pending the passenger/driver dashboard chunks.
-- Frontend data-fetching pattern for the dashboards specifically (plain `fetch` + polling vs. a library like TanStack Query) — same.
+**Picked**: browser `fetch` plus a four-second poll for passenger, driver, and profile state. Each page waits for one poll cycle to finish before scheduling the next; independent resources (dashboard, history, zones, profile) load in parallel, and a monotonically increasing request sequence prevents a manual post-action refresh from being overwritten by an older response. Live authenticated reads use `cache: "no-store"`.
+
+**Alternatives seriously considered**:
+- **WebSocket or Server-Sent Events (SSE)** — the backend pushes a status change as soon as it happens instead of waiting for the next poll.
+- **TanStack Query / SWR** — a client data library that supplies caching, request deduplication, background revalidation, retries, and query invalidation.
+
+**Why this fits here**: the PRD asks for live status tracking but explicitly warns against adding infrastructure without a reason. At this MVP's scale, a four-second delay is acceptable and plain `fetch` keeps the request path visible to a reviewer. The scheduling detail is a correctness choice, not just an optimization: `setInterval` can start a second multi-request refresh while the first is still running. On a slow machine, each new tick can invalidate the previous tick before any one cycle publishes a complete dashboard, leaving the vehicle card permanently loading after a page refresh. Scheduling the next tick only after completion removes that starvation case. Parallel resource reads also mean a slow ride-history response cannot hide an otherwise healthy vehicle response. `no-store` prevents back/forward navigation from presenting a cached online/offline snapshot as current state.
+
+**What would make me switch**: real dispatch at production scale, where a driver-arrived or trip-started event should reach many connected clients immediately and polling from thousands of open dashboards would create waste. SSE is the likely first switch for one-way status delivery; WebSockets become worthwhile if clients also need a persistent bidirectional channel. TanStack Query becomes attractive once the frontend has enough distinct server state and mutations that hand-maintained invalidation is harder to reason about than the added dependency.
+
+**Trade-off accepted**: status can be up to roughly four seconds old, and every open dashboard makes periodic requests even when nothing changes. The implementation also owns its small amount of refresh coordination rather than delegating it to a data library.
+
+---
+
+## 11. Frontend styling — Tailwind CSS without a component library
+
+**Picked**: Tailwind CSS utility classes with a small set of project-owned components (`FormField`, `StatusBadge`, and the dashboard cards).
+
+**Alternatives seriously considered**:
+- **A component library** such as Material UI or Chakra UI — ready-made accessible form controls, dialogs, themes, and layout primitives.
+- **CSS Modules** — locally scoped authored CSS files, with semantic class names and no runtime dependency.
+
+**Why this fits here**: the interface is intentionally small and task-focused. Tailwind makes responsive and dark-mode states explicit next to the markup while avoiding a design-system dependency whose default visual identity would dominate a compact take-home project. Project-owned cards and badges keep the driver/passenger surfaces consistent without pretending the MVP needs a full component system.
+
+**What would make me switch**: a substantially larger UI with complex dialogs, tables, date pickers, or a multi-developer design system. At that point, an accessible headless component library plus shared design tokens would prevent duplicated interaction work.
+
+**Trade-off accepted**: utility-heavy `className` values are more verbose in JSX, and consistency depends on the project's own small components and review discipline rather than a library enforcing it.
 
 *This file is kept in sync with what's actually implemented — every time a new non-trivial technical decision gets made in this build, it gets its own entry here alongside the code, not bolted on at the end.*

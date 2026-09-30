@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useRequireAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
+import { useSerialPolling } from "@/lib/use-serial-polling";
 import { DriverDashboardState, Pool, RideRequest, Vehicle, Zone } from "@/lib/types";
 import { DriverStatusToggle } from "./DriverStatusToggle";
 import { RelevantRequests } from "./RelevantRequests";
@@ -23,7 +24,7 @@ export default function DriverDashboard() {
   const [relevantRequests, setRelevantRequests] = useState<RideRequest[]>([]);
   const [history, setHistory] = useState<Pool[]>([]);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const zonesLoadedRef = useRef(false);
   const requestSeqRef = useRef(0);
 
@@ -40,65 +41,49 @@ export default function DriverDashboard() {
     // started, regardless of which one's network round-trip happens to
     // finish first.
     const seq = ++requestSeqRef.current;
-    try {
-      // Retried alongside everything else below instead of a separate
-      // one-shot fetch-on-mount: that version had the exact same silent-
-      // failure gap as the dashboard fetch used to (see the comment below)
-      // -- one bad tick left the zone dropdown permanently empty and
-      // "Online at Banani" permanently degraded to just "Online", with no
-      // way to recover short of a full page reload timed against a working
-      // backend. zonesLoadedRef, not `zones.length`, so this doesn't need
-      // `zones` in refresh's own dependency array (which would tear down
-      // and rebuild the poll interval every time it changed).
-      if (!zonesLoadedRef.current) {
-        const zoneList = await apiFetch<Zone[]>("/api/zones", { token });
-        if (seq === requestSeqRef.current) {
-          setZones(zoneList);
-          zonesLoadedRef.current = true;
-        }
-      }
-      const state = await apiFetch<DriverDashboardState>("/api/driver/dashboard", { token });
-      const isStillLatest = seq === requestSeqRef.current;
-      if (isStillLatest) {
-        setDashboard(state);
-      }
-      if (state.vehicle.status === "ONLINE" && !state.pool) {
+    // The dashboard, history and (until loaded once) zones are independent.
+    // Fetching them together keeps a slow history query from delaying the
+    // authoritative vehicle status or making the vehicle card disappear.
+    const [stateResult, historyResult, zonesResult] = await Promise.allSettled([
+      apiFetch<DriverDashboardState>("/api/driver/dashboard", { token }),
+      apiFetch<Pool[]>("/api/driver/history", { token }),
+      zonesLoadedRef.current
+        ? Promise.resolve<Zone[] | null>(null)
+        : apiFetch<Zone[]>("/api/zones", { token }),
+    ]);
+
+    if (seq !== requestSeqRef.current) return;
+
+    if (zonesResult.status === "fulfilled" && zonesResult.value) {
+      setZones(zonesResult.value);
+      zonesLoadedRef.current = true;
+    }
+    if (historyResult.status === "fulfilled") {
+      setHistory(historyResult.value);
+    }
+    if (stateResult.status === "rejected") {
+      setLoadError(true);
+      return;
+    }
+
+    const state = stateResult.value;
+    setDashboard(state);
+    setInitialLoadDone(true);
+    setLoadError(false);
+
+    if (state.vehicle.status === "ONLINE" && !state.pool) {
+      try {
         const requests = await apiFetch<RideRequest[]>("/api/driver/requests", { token });
-        if (isStillLatest) {
-          setRelevantRequests(requests);
-        }
-      } else if (isStillLatest) {
-        setRelevantRequests([]);
+        if (seq === requestSeqRef.current) setRelevantRequests(requests);
+      } catch {
+        // Keep the last successful list and retry on the next poll.
       }
-      const pastTrips = await apiFetch<Pool[]>("/api/driver/history", { token });
-      if (isStillLatest) {
-        setHistory(pastTrips);
-        // Only on success -- a transient poll failure after the page is
-        // already showing real data isn't worth surfacing (the next tick
-        // tries again), but marking the *first* load "done" from the
-        // finally block below used to do that unconditionally: if that
-        // first request hit a transient hiccup, the page flipped past
-        // "Loading..." straight to rendering with dashboard still null, so
-        // the whole vehicle card silently vanished instead of the page
-        // just staying in its loading state until a real answer came back.
-        setInitialLoadDone(true);
-      }
-    } catch {
-      // Swallowed here deliberately -- see the comment above for why this
-      // must NOT also flip initialLoadDone.
+    } else if (seq === requestSeqRef.current) {
+      setRelevantRequests([]);
     }
   }, [token]);
 
-  useEffect(() => {
-    if (!token) return;
-
-    queueMicrotask(refresh);
-
-    pollRef.current = setInterval(refresh, POLL_INTERVAL_MS);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [token, refresh]);
+  useSerialPolling(refresh, POLL_INTERVAL_MS, Boolean(token));
 
   if (loading || !user) {
     return null;
@@ -142,7 +127,21 @@ export default function DriverDashboard() {
       </div>
 
       {!initialLoadDone ? (
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading your dashboard...</p>
+        loadError ? (
+          <div className="flex flex-col items-start gap-2">
+            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+              Couldn&apos;t load your vehicle details. Your saved driver status has not been changed.
+            </p>
+            <button
+              onClick={refresh}
+              className="rounded-full border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
+            >
+              Try again
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading your dashboard...</p>
+        )
       ) : (
         <>
           {dashboard && (

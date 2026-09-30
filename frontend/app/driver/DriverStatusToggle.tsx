@@ -73,12 +73,16 @@ export function DriverStatusToggle({ vehicle, zones, token, onChanged }: Props) 
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="font-medium text-zinc-900 dark:text-zinc-50">
             {vehicle.name} &middot; {vehicle.capacity} seats
           </p>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+            <span
+              aria-hidden="true"
+              className={`h-2 w-2 rounded-full ${vehicle.status === "ONLINE" ? "bg-emerald-500" : "bg-zinc-400"}`}
+            />
             {vehicle.status === "ONLINE"
               ? `Online${currentZoneName ? ` at ${currentZoneName}` : ""}`
               : "Offline"}
@@ -86,11 +90,11 @@ export function DriverStatusToggle({ vehicle, zones, token, onChanged }: Props) 
         </div>
 
         {vehicle.status === "ONLINE" ? (
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <select
               value={zoneId}
               onChange={(e) => setZoneId(e.target.value)}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 sm:w-auto dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
             >
               {zones.map((zone) => (
                 <option key={zone.id} value={zone.id}>
@@ -114,11 +118,11 @@ export function DriverStatusToggle({ vehicle, zones, token, onChanged }: Props) 
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <select
               value={zoneId}
               onChange={(e) => setZoneId(e.target.value)}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 sm:w-auto dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50"
             >
               <option value="" disabled>
                 Current zone
