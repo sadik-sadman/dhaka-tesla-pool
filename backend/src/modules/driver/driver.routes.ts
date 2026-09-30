@@ -34,6 +34,11 @@ driverRouter.post("/requests/:id/accept", async (req, res) => {
   res.status(200).json(serializeBigInt(rideRequest));
 });
 
+driverRouter.post("/requests/:id/decline", async (req, res) => {
+  const rideRequest = await driverService.declineRideRequest(req.user!.sub, requireStringParam(req, "id"));
+  res.status(200).json(serializeBigInt(rideRequest));
+});
+
 driverRouter.post("/pool/arrived", async (req, res) => {
   const rideRequests = await driverService.markDriverArrived(req.user!.sub);
   res.status(200).json(serializeBigInt(rideRequests));
@@ -47,4 +52,9 @@ driverRouter.post("/pool/start", async (req, res) => {
 driverRouter.post("/pool/complete", async (req, res) => {
   const rideRequests = await driverService.completeTrip(req.user!.sub);
   res.status(200).json(serializeBigInt(rideRequests));
+});
+
+driverRouter.post("/pool/members/:id/remove", async (req, res) => {
+  const rideRequest = await driverService.removePoolMember(req.user!.sub, requireStringParam(req, "id"));
+  res.status(200).json(serializeBigInt(rideRequest));
 });

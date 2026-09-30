@@ -38,13 +38,19 @@ export async function setDriverStatus(driverId: string, input: SetDriverStatusIn
 }
 
 /**
- * Requests visible to this driver: pending (REQUESTED), same pickup zone as
- * where the vehicle currently is -- the "in about a second" candidate list
- * from the PRD's Section 1 story. Whether one of these can actually be
- * *accepted* right now (corridor compatibility with whatever pool is
- * already in progress, remaining capacity) is authoritatively decided by
- * acceptRideRequest, not here -- see docs/decisions.md#driver-accept-
- * semantics.
+ * Requests visible to this driver: pending (REQUESTED), same pickup zone,
+ * and seat count fits in the available capacity.
+ *
+ * Remaining capacity rules:
+ *  - No active pool → full vehicle capacity.
+ *  - Pool is MATCHED_ACCEPTED (pooling window open) → capacity minus seats
+ *    already occupied; requests that don't fit are hidden.
+ *  - Pool is DRIVER_ARRIVED or STARTED (window closed for this trip) →
+ *    full vehicle capacity, so the driver can see upcoming requests for the
+ *    next trip. The Accept button is disabled on the frontend for these
+ *    states; the backend enforces it via acceptRideRequest.
+ *
+ * See docs/decisions.md#driver-accept-semantics.
  */
 export async function listRelevantRequests(driverId: string) {
   const vehicle = await getVehicleForDriver(driverId);
@@ -52,8 +58,26 @@ export async function listRelevantRequests(driverId: string) {
     return [];
   }
 
+  // Find the current active pool (if any) to determine remaining capacity.
+  const activePool = await prisma.pool.findFirst({
+    where: { vehicleId: vehicle.id, status: { in: [...ACTIVE_POOL_STATUSES] } },
+    select: { occupiedSeats: true, status: true },
+  });
+
+  // When a pool is open (MATCHED_ACCEPTED), hide requests that won't fit.
+  // When the window is closed (DRIVER_ARRIVED / STARTED), show all that fit
+  // the full vehicle capacity so the driver sees what's coming next.
+  const remainingSeats =
+    activePool?.status === "MATCHED_ACCEPTED"
+      ? vehicle.capacity - activePool.occupiedSeats
+      : vehicle.capacity;
+
   return prisma.rideRequest.findMany({
-    where: { status: "REQUESTED", pickupZoneId: vehicle.currentZoneId },
+    where: {
+      status: "REQUESTED",
+      pickupZoneId: vehicle.currentZoneId,
+      seatsRequested: { lte: remainingSeats },
+    },
     include: {
       pickupZone: true,
       destinationZone: true,
@@ -364,5 +388,94 @@ export async function listMyHistory(driverId: string) {
       },
     },
     orderBy: { completedAt: "desc" },
+  });
+}
+
+/**
+ * Driver declines a pending (REQUESTED) ride they don't want to serve.
+ * Sets the request to CANCELLED so the passenger knows and can re-request
+ * if needed. Only allowed while the request is still in REQUESTED status
+ * and at the driver's current zone.
+ */
+export async function declineRideRequest(driverId: string, rideRequestId: string) {
+  const vehicle = await getVehicleForDriver(driverId);
+
+  const rideRequest = await prisma.rideRequest.findUnique({
+    where: { id: rideRequestId },
+  });
+  if (!rideRequest) throw new NotFoundError("Ride request not found");
+  if (rideRequest.status !== "REQUESTED") {
+    throw new ConflictError("Only a pending request can be declined");
+  }
+  if (rideRequest.pickupZoneId !== vehicle.currentZoneId) {
+    throw new BadRequestError("This request is not at your current zone");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.rideRequest.update({
+      where: { id: rideRequestId },
+      data: { status: "CANCELLED", cancelledAt: new Date() },
+    });
+    await tx.rideStatusHistory.create({
+      data: {
+        rideRequestId,
+        fromStatus: "REQUESTED",
+        toStatus: "CANCELLED",
+        changedBy: driverId,
+      },
+    });
+    return updated;
+  });
+}
+
+/**
+ * Remove an already-accepted passenger from the active pool while the
+ * pooling window is still open (pool status = MATCHED_ACCEPTED). Their
+ * ride request is set back to REQUESTED and the pool's occupied-seat count
+ * is decremented, so another accept can fill that seat or the passenger
+ * can be picked up later / by another driver.
+ *
+ * Not allowed once the driver has marked arrived (DRIVER_ARRIVED / STARTED)
+ * because the trip is physically underway at that point.
+ */
+export async function removePoolMember(driverId: string, rideRequestId: string) {
+  const vehicle = await getVehicleForDriver(driverId);
+  const pool = await getActivePoolForDriver(vehicle.id);
+
+  if (pool.status !== "MATCHED_ACCEPTED") {
+    throw new ConflictError(
+      "Passengers can only be removed while the pooling window is open (before marking arrived)",
+    );
+  }
+
+  const member = pool.rideRequests.find((r) => r.id === rideRequestId);
+  if (!member) {
+    throw new NotFoundError("This passenger is not in your current pool");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    // Return the ride to REQUESTED so it's visible to the driver again
+    // and can be re-accepted or served by another driver.
+    const updated = await tx.rideRequest.update({
+      where: { id: rideRequestId },
+      data: { status: "REQUESTED", poolId: null },
+    });
+
+    // Free up the reserved seats so the next accept can claim them.
+    await tx.pool.update({
+      where: { id: pool.id },
+      data: { occupiedSeats: { decrement: member.seatsRequested } },
+    });
+
+    await tx.rideStatusHistory.create({
+      data: {
+        rideRequestId,
+        fromStatus: "MATCHED_ACCEPTED",
+        toStatus: "REQUESTED",
+        changedBy: driverId,
+      },
+    });
+
+    return updated;
   });
 }

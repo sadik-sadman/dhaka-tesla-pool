@@ -71,15 +71,15 @@ export default function DriverDashboard() {
     setInitialLoadDone(true);
     setLoadError(false);
 
-    // Fetch pending requests whenever the vehicle is ONLINE — even with an
-    // active pool — as long as the pooling window is still open
-    // (MATCHED_ACCEPTED). Once the driver marks arrived the window closes
-    // (DRIVER_ARRIVED / STARTED) and we clear the list.
-    const poolingWindowOpen =
-      state.vehicle.status === "ONLINE" &&
-      (!state.pool || state.pool.status === "MATCHED_ACCEPTED");
-
-    if (poolingWindowOpen) {
+    // Always fetch pending requests whenever ONLINE, regardless of whether
+    // a trip is in progress. The backend filters by remaining capacity and
+    // returns the right subset for each state:
+    //   - No pool / MATCHED_ACCEPTED → requests that fit remaining seats
+    //   - DRIVER_ARRIVED / STARTED   → requests that fit full vehicle
+    //     capacity (for the next trip after this one completes)
+    // The Accept button is disabled on the frontend when the window is closed;
+    // the backend also enforces it on every accept attempt.
+    if (state.vehicle.status === "ONLINE") {
       try {
         const requests = await apiFetch<RideRequest[]>("/api/driver/requests", { token });
         if (seq === requestSeqRef.current) setRelevantRequests(requests);
@@ -111,6 +111,19 @@ export default function DriverDashboard() {
     setDashboard((prev) => (prev ? { ...prev, vehicle } : { vehicle, pool: null }));
     refresh();
   }
+
+  // The pooling window is open when there is no active pool OR the pool is
+  // still at MATCHED_ACCEPTED. Once the driver marks arrived or starts the
+  // trip, Accept is disabled (greyed out with a tooltip).
+  const poolStatus = dashboard?.pool?.status ?? null;
+  const poolingWindowOpen = poolStatus === null || poolStatus === "MATCHED_ACCEPTED";
+
+  // Pending requests section: shown whenever ONLINE, below any active pool.
+  // When the window is closed the section is still visible so the driver can
+  // see (and cancel) upcoming requests — the Accept button itself is disabled.
+  const showRequests =
+    dashboard?.vehicle.status === "ONLINE" &&
+    (relevantRequests.length > 0 || !dashboard.pool);
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 bg-zinc-50 px-6 py-10 dark:bg-black">
@@ -161,23 +174,30 @@ export default function DriverDashboard() {
             />
           )}
 
-          {dashboard?.pool ? (
+          {/* Active pool card — shown whenever a trip is in progress */}
+          {dashboard?.pool && (
             <ActivePool pool={dashboard.pool} token={token!} onChanged={refresh} />
-          ) : (
-            dashboard?.vehicle.status === "ONLINE" && (
-              <RelevantRequests requests={relevantRequests} token={token!} onAccepted={refresh} />
-            )
           )}
 
-          {/* While a pool is open but not yet started, the driver can still
-              accept more passengers into it — show remaining pending requests
-              below the active pool card so they know more riders are waiting. */}
-          {dashboard?.pool?.status === "MATCHED_ACCEPTED" && relevantRequests.length > 0 && (
+          {/* Pending / upcoming requests:
+              - No pool: "Relevant requests" — Accept fully enabled.
+              - MATCHED_ACCEPTED: "Add more passengers" — Accept enabled.
+              - DRIVER_ARRIVED / STARTED: "Upcoming requests" — Accept disabled,
+                driver can still Cancel/Decline individual requests. */}
+          {showRequests && (
             <RelevantRequests
               requests={relevantRequests}
               token={token!}
               onAccepted={refresh}
-              heading="Add more passengers"
+              onDeclined={refresh}
+              heading={
+                poolStatus === null
+                  ? "Relevant requests"
+                  : poolStatus === "MATCHED_ACCEPTED"
+                    ? "Add more passengers"
+                    : "Upcoming requests"
+              }
+              acceptEnabled={poolingWindowOpen}
             />
           )}
 
