@@ -25,9 +25,21 @@ export default function DriverDashboard() {
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const zonesLoadedRef = useRef(false);
+  const requestSeqRef = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!token) return;
+    // Every refresh() call (poll tick, or a manual one right after an
+    // action like "Go online") fires its own independent set of requests --
+    // nothing cancels an older one that's still in flight. On a machine
+    // with variable response times, an older, slower request can resolve
+    // *after* a newer one and overwrite fresher state with stale data (the
+    // dashboard flipping back to "Offline" moments after actually going
+    // online, no matter how correct the write itself was). This sequence
+    // number makes a response a no-op once a newer refresh() has already
+    // started, regardless of which one's network round-trip happens to
+    // finish first.
+    const seq = ++requestSeqRef.current;
     try {
       // Retried alongside everything else below instead of a separate
       // one-shot fetch-on-mount: that version had the exact same silent-
@@ -40,28 +52,37 @@ export default function DriverDashboard() {
       // and rebuild the poll interval every time it changed).
       if (!zonesLoadedRef.current) {
         const zoneList = await apiFetch<Zone[]>("/api/zones", { token });
-        setZones(zoneList);
-        zonesLoadedRef.current = true;
+        if (seq === requestSeqRef.current) {
+          setZones(zoneList);
+          zonesLoadedRef.current = true;
+        }
       }
       const state = await apiFetch<DriverDashboardState>("/api/driver/dashboard", { token });
-      setDashboard(state);
+      const isStillLatest = seq === requestSeqRef.current;
+      if (isStillLatest) {
+        setDashboard(state);
+      }
       if (state.vehicle.status === "ONLINE" && !state.pool) {
         const requests = await apiFetch<RideRequest[]>("/api/driver/requests", { token });
-        setRelevantRequests(requests);
-      } else {
+        if (isStillLatest) {
+          setRelevantRequests(requests);
+        }
+      } else if (isStillLatest) {
         setRelevantRequests([]);
       }
       const pastTrips = await apiFetch<Pool[]>("/api/driver/history", { token });
-      setHistory(pastTrips);
-      // Only on success -- a transient poll failure after the page is
-      // already showing real data isn't worth surfacing (the next tick
-      // tries again), but marking the *first* load "done" from the finally
-      // block below used to do that unconditionally: if that first request
-      // hit a transient hiccup, the page flipped past "Loading..." straight
-      // to rendering with dashboard still null, so the whole vehicle card
-      // silently vanished instead of the page just staying in its loading
-      // state until a real answer came back.
-      setInitialLoadDone(true);
+      if (isStillLatest) {
+        setHistory(pastTrips);
+        // Only on success -- a transient poll failure after the page is
+        // already showing real data isn't worth surfacing (the next tick
+        // tries again), but marking the *first* load "done" from the
+        // finally block below used to do that unconditionally: if that
+        // first request hit a transient hiccup, the page flipped past
+        // "Loading..." straight to rendering with dashboard still null, so
+        // the whole vehicle card silently vanished instead of the page
+        // just staying in its loading state until a real answer came back.
+        setInitialLoadDone(true);
+      }
     } catch {
       // Swallowed here deliberately -- see the comment above for why this
       // must NOT also flip initialLoadDone.
@@ -89,6 +110,11 @@ export default function DriverDashboard() {
   }
 
   function handleVehicleChanged(vehicle: Vehicle) {
+    // Bump the sequence *before* setting state -- otherwise an older poll
+    // tick's response, already in flight when this PATCH resolved, could
+    // still land right after this and overwrite it with stale data (see
+    // the comment on requestSeqRef in refresh() above).
+    requestSeqRef.current += 1;
     setDashboard((prev) => (prev ? { ...prev, vehicle } : { vehicle, pool: null }));
     refresh();
   }

@@ -27,29 +27,51 @@ export default function ProfilePage() {
   const [retryCount, setRetryCount] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const zonesLoadedRef = useRef(false);
+  const requestSeqRef = useRef(0);
 
   const load = useCallback(async () => {
     if (!token || !user) return;
+    // See driver/page.tsx's refresh() for the full reasoning: nothing
+    // cancels an older in-flight poll tick, so on a machine with variable
+    // response times an older, slower request can resolve *after* a newer
+    // one and overwrite fresher state with stale data -- e.g. landing on
+    // this page shortly after "Go online" and having an older, still-in-
+    // flight tick's response land after the newer one, showing "Offline"
+    // for a vehicle that's actually online. This makes a response a no-op
+    // once a newer load() call has already started, regardless of which
+    // one's round-trip finishes first.
+    const seq = ++requestSeqRef.current;
     try {
       const me = await apiFetch<PublicUser>("/api/auth/me", { token });
-      setProfile(me);
+      const isStillLatest = seq === requestSeqRef.current;
+      if (isStillLatest) {
+        setProfile(me);
+      }
 
       if (user.role === "DRIVER") {
         if (!zonesLoadedRef.current) {
           const zoneList = await apiFetch<Zone[]>("/api/zones", { token });
-          setZones(zoneList);
-          zonesLoadedRef.current = true;
+          if (seq === requestSeqRef.current) {
+            setZones(zoneList);
+            zonesLoadedRef.current = true;
+          }
         }
         const dashboard = await apiFetch<DriverDashboardState>("/api/driver/dashboard", { token });
-        setVehicle(dashboard.vehicle);
+        if (seq === requestSeqRef.current) {
+          setVehicle(dashboard.vehicle);
+        }
       }
       // Only on success -- see driver/page.tsx's refresh() for the full
       // reasoning: a failed fetch must never be treated the same as a
       // successful one showing real (if empty) data.
-      setInitialLoadDone(true);
-      setLoadError(false);
+      if (seq === requestSeqRef.current) {
+        setInitialLoadDone(true);
+        setLoadError(false);
+      }
     } catch {
-      setLoadError(true);
+      if (seq === requestSeqRef.current) {
+        setLoadError(true);
+      }
     }
   }, [token, user]);
 
