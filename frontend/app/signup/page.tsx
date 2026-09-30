@@ -104,7 +104,7 @@ export default function SignupPage() {
               label="Seat capacity"
               type="number"
               min={1}
-              max={10}
+              max={3}
               required
               value={vehicleCapacity}
               onChange={(e) => setVehicleCapacity(e.target.value)}

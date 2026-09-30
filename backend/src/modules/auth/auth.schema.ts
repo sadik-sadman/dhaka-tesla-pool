@@ -16,7 +16,7 @@ export const signupSchema = z.discriminatedUnion("role", [
     email: z.string().email(),
     password: z.string().min(8).max(100),
     vehicleName: z.string().min(1).max(50),
-    vehicleCapacity: z.number().int().min(1).max(10),
+    vehicleCapacity: z.number().int().min(1).max(3),
   }),
 ]);
 
