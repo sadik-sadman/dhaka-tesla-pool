@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc && tsc -p tsconfig.seed.json",
-    "start": "node dist/index.js",
+    "start": "prisma generate && prisma migrate deploy && prisma db seed && node dist/index.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
