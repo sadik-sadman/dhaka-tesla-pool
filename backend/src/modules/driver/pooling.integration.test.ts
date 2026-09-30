@@ -398,7 +398,19 @@ describe("tesla-pooling (real Postgres-wire-protocol database)", () => {
       .set("Authorization", `Bearer ${jashim.token}`)
       .expect(200);
     expect(idleOnline.body.vehicle.status).toBe("ONLINE");
+    expect(idleOnline.body.vehicle.currentZoneId).toBe(zones.banani.id);
     expect(idleOnline.body.pool).toBeNull();
+
+    // Opening the profile only reads /auth/me, and a subsequent dashboard
+    // load (including a full browser refresh) must still return the status
+    // persisted by PATCH /status. Navigation and reads never toggle it.
+    await request(app).get("/api/auth/me").set("Authorization", `Bearer ${jashim.token}`).expect(200);
+    const afterProfileRead = await request(app)
+      .get("/api/driver/dashboard")
+      .set("Authorization", `Bearer ${jashim.token}`)
+      .expect(200);
+    expect(afterProfileRead.body.vehicle.status).toBe("ONLINE");
+    expect(afterProfileRead.body.vehicle.currentZoneId).toBe(zones.banani.id);
 
     const nusratRequest = await request(app)
       .post("/api/rides")

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useRequireAuth } from "@/lib/auth-context";
 import { apiFetch } from "@/lib/api";
 import { RideRequest, Zone } from "@/lib/types";
+import { useSerialPolling } from "@/lib/use-serial-polling";
 import { RequestRideForm } from "./RequestRideForm";
 import { RideList } from "./RideList";
 
@@ -20,7 +21,6 @@ export default function PassengerDashboard() {
   const [zones, setZones] = useState<Zone[]>([]);
   const [rideRequests, setRideRequests] = useState<RideRequest[]>([]);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const zonesLoadedRef = useRef(false);
   const requestSeqRef = useRef(0);
 
@@ -33,48 +33,25 @@ export default function PassengerDashboard() {
     // response a no-op once a newer refreshRides() call has already
     // started, regardless of which one's round-trip finishes first.
     const seq = ++requestSeqRef.current;
-    // Independent of the rides fetch below and retried on the same tick
-    // until it succeeds once, instead of a separate one-shot fetch-on-mount
-    // that just gave up for the rest of the session on a single bad tick --
-    // zonesLoadedRef, not `zones.length`, so this doesn't need `zones` in
-    // this callback's own dependency array.
-    if (!zonesLoadedRef.current) {
-      try {
-        const zoneList = await apiFetch<Zone[]>("/api/zones", { token });
-        if (seq === requestSeqRef.current) {
-          setZones(zoneList);
-          zonesLoadedRef.current = true;
-        }
-      } catch {
-        // Retried next tick.
-      }
+    const [ridesResult, zonesResult] = await Promise.allSettled([
+      apiFetch<RideRequest[]>("/api/rides", { token }),
+      zonesLoadedRef.current
+        ? Promise.resolve<Zone[] | null>(null)
+        : apiFetch<Zone[]>("/api/zones", { token }),
+    ]);
+
+    if (seq !== requestSeqRef.current) return;
+    if (zonesResult.status === "fulfilled" && zonesResult.value) {
+      setZones(zonesResult.value);
+      zonesLoadedRef.current = true;
     }
-    try {
-      const rides = await apiFetch<RideRequest[]>("/api/rides", { token });
-      if (seq === requestSeqRef.current) {
-        setRideRequests(rides);
-        // Only on success -- see driver/page.tsx's refresh() for why
-        // marking the first load "done" on a caught error (via `finally`)
-        // is wrong: it made a transient failure on the very first fetch
-        // flip the page straight to "loaded" with empty data, instead of
-        // staying in its loading state until a real answer came back.
-        setInitialLoadDone(true);
-      }
-    } catch {
-      // Swallowed here deliberately -- see the comment above.
+    if (ridesResult.status === "fulfilled") {
+      setRideRequests(ridesResult.value);
+      setInitialLoadDone(true);
     }
   }, [token]);
 
-  useEffect(() => {
-    if (!token) return;
-
-    queueMicrotask(refreshRides);
-
-    pollRef.current = setInterval(refreshRides, POLL_INTERVAL_MS);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [token, refreshRides]);
+  useSerialPolling(refreshRides, POLL_INTERVAL_MS, Boolean(token));
 
   if (loading || !user) {
     return null;

@@ -16,6 +16,10 @@ interface RequestOptions {
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     method: options.method ?? "GET",
+    // Dashboard/profile responses are live, user-specific state. They must
+    // always be revalidated against the API rather than restored from the
+    // browser's HTTP cache when navigating back or reloading the page.
+    cache: "no-store",
     headers: {
       "Content-Type": "application/json",
       ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
