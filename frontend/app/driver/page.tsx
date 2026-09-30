@@ -24,10 +24,25 @@ export default function DriverDashboard() {
   const [history, setHistory] = useState<Pool[]>([]);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const zonesLoadedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (!token) return;
     try {
+      // Retried alongside everything else below instead of a separate
+      // one-shot fetch-on-mount: that version had the exact same silent-
+      // failure gap as the dashboard fetch used to (see the comment below)
+      // -- one bad tick left the zone dropdown permanently empty and
+      // "Online at Banani" permanently degraded to just "Online", with no
+      // way to recover short of a full page reload timed against a working
+      // backend. zonesLoadedRef, not `zones.length`, so this doesn't need
+      // `zones` in refresh's own dependency array (which would tear down
+      // and rebuild the poll interval every time it changed).
+      if (!zonesLoadedRef.current) {
+        const zoneList = await apiFetch<Zone[]>("/api/zones", { token });
+        setZones(zoneList);
+        zonesLoadedRef.current = true;
+      }
       const state = await apiFetch<DriverDashboardState>("/api/driver/dashboard", { token });
       setDashboard(state);
       if (state.vehicle.status === "ONLINE" && !state.pool) {
@@ -38,18 +53,24 @@ export default function DriverDashboard() {
       }
       const pastTrips = await apiFetch<Pool[]>("/api/driver/history", { token });
       setHistory(pastTrips);
-    } catch {
-      // A transient poll failure isn't worth surfacing -- the next tick
-      // tries again.
-    } finally {
+      // Only on success -- a transient poll failure after the page is
+      // already showing real data isn't worth surfacing (the next tick
+      // tries again), but marking the *first* load "done" from the finally
+      // block below used to do that unconditionally: if that first request
+      // hit a transient hiccup, the page flipped past "Loading..." straight
+      // to rendering with dashboard still null, so the whole vehicle card
+      // silently vanished instead of the page just staying in its loading
+      // state until a real answer came back.
       setInitialLoadDone(true);
+    } catch {
+      // Swallowed here deliberately -- see the comment above for why this
+      // must NOT also flip initialLoadDone.
     }
   }, [token]);
 
   useEffect(() => {
     if (!token) return;
 
-    apiFetch<Zone[]>("/api/zones", { token }).then(setZones).catch(() => setZones([]));
     queueMicrotask(refresh);
 
     pollRef.current = setInterval(refresh, POLL_INTERVAL_MS);

@@ -14,6 +14,8 @@ export default function ProfilePage() {
   const [vehicle, setVehicle] = useState<DriverDashboardState["vehicle"] | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     if (!token || !user) return;
@@ -31,15 +33,22 @@ export default function ProfilePage() {
           setVehicle(dashboard.vehicle);
           setZones(zoneList);
         }
-      } catch {
-        // A transient failure here just means stale/no data below --
-        // nothing destructive, no retry loop needed for a profile view.
-      } finally {
+        // Only on success -- see driver/page.tsx's refresh() for the full
+        // reasoning. Here it matters even more: this page has no poll loop
+        // to silently correct a stale render on the next tick the way the
+        // dashboards do, so a failed fetch must never be treated the same
+        // as a successful one showing real (if empty) data -- that's how a
+        // transient error here previously rendered as "Status: Offline"
+        // for a vehicle that was actually online, instead of surfacing the
+        // failure.
         setInitialLoadDone(true);
+        setLoadError(false);
+      } catch {
+        setLoadError(true);
       }
     }
     queueMicrotask(load);
-  }, [token, user]);
+  }, [token, user, retryCount]);
 
   if (loading || !user) {
     return null;
@@ -65,7 +74,21 @@ export default function ProfilePage() {
       </div>
 
       {!initialLoadDone ? (
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading profile...</p>
+        loadError ? (
+          <div className="flex flex-col items-start gap-2">
+            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+              Couldn&apos;t load your profile. Please try again.
+            </p>
+            <button
+              onClick={() => setRetryCount((n) => n + 1)}
+              className="rounded-full border border-zinc-300 px-4 py-1.5 text-sm font-medium text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-50 dark:hover:bg-zinc-900"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading profile...</p>
+        )
       ) : (
         <>
           <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
